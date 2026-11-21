@@ -264,7 +264,9 @@ def write_image_request(project: dict) -> Path:
     d = project_dir(project["id"])
     lines = [
         f"# {project['topic']} — 이미지 요청서 ({project['content_label']})",
-        f"- 프로젝트: {project['id']}",
+        f"- 프로젝트(ep_id): {project['id']}",
+        f"- target_inbox: assets_inbox/{project['id']}",
+        f"- 위 폴더에 올려 주세요. (맥북이 20초마다 자동으로 내려받아 kf/ 에 넣습니다)",
         f"- 총 {len(project['cuts'])}컷 / {project['total_seconds']}초 / 1080x1920 (9:16)",
         "- 아래 순서대로 컷 이미지를 만들어 `kf/` 폴더에 `c01.png`, `c02.png` … 로 저장하세요.",
         "- 키프레임은 세로 9:16, 인물·음식은 화면 가운데 78% 안전영역 안에, 글자·로고·워터마크 없이.",

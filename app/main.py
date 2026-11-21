@@ -12,8 +12,8 @@ from fastapi import Body, FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
-from . import (audio, copywriter, ffmpeg_tools, fonts, jobs, kling, llm, net, pending, planner,
-               render, revise, scheduler, settings, sfx, strategy, topics, tts, youtube)
+from . import (audio, copywriter, ffmpeg_tools, fonts, github_issue, inbox_watch, jobs, kling, llm, net,
+               pending, planner, render, revise, scheduler, settings, sfx, strategy, topics, tts, youtube)
 
 app = FastAPI(title="TastyPop Studio", version=settings.VERSION)
 WEB = settings.WEB_DIR
@@ -50,6 +50,10 @@ def _startup() -> None:
         print("[sfx] 라이브러리 생성 실패:", e)
     scheduler.start()
     pending.start_worker()
+    try:
+        inbox_watch.start()
+    except Exception as e:
+        print("[auto-receive] 시작 실패:", e)
 
 
 @app.get("/api/remote")
@@ -393,6 +397,56 @@ def image_request(pid: str) -> Response:
     return Response(f.read_text(encoding="utf-8"), media_type="text/plain; charset=utf-8")
 
 
+# ------------------------------------------------------------------ 깃허브(케빈) 이미지 요청
+@app.get("/api/github/status")
+def github_status() -> dict:
+    return github_issue.status()
+
+
+@app.post("/api/projects/{pid}/github-issue")
+def create_github_issue(pid: str, body: dict = Body(default={})) -> dict:
+    """[📤 케빈에게 이미지 요청하기] — 토큰이 있으면 이슈 생성, 없으면 1클릭 제출 URL."""
+    p = _proj(pid)
+    note = (body.get("note") or "").strip()
+    try:
+        res = github_issue.create(p, note=note)
+    except Exception as e:
+        raise HTTPException(400, f"이미지 요청 생성 실패: {e}")
+    jobs.log_line(pid, f"깃허브 이미지 요청({'이슈 생성' if res.get('mode') == 'api' else '작성 화면 열기'})"
+                        f" · target_inbox: {res.get('target_inbox')}")
+    return res
+
+
+@app.get("/api/watch")
+def watch_status() -> dict:
+    return inbox_watch.status()
+
+
+@app.post("/api/watch")
+def watch_toggle(body: dict = Body(default={})) -> dict:
+    if "on" in body:
+        return {"ok": True, **inbox_watch.set_enabled(bool(body["on"]))}
+    return {"ok": True, **inbox_watch.status()}
+
+
+@app.post("/api/watch/now")
+def watch_now() -> dict:
+    """20초를 기다리지 않고 지금 한 번 확인(수동)."""
+    try:
+        res = inbox_watch.receive_once()
+    except Exception as e:
+        raise HTTPException(500, f"확인 실패: {e}")
+    return {"ok": True, **res, "status": inbox_watch.status()}
+
+
+@app.post("/api/watch/active")
+def watch_active(body: dict = Body(default={})) -> dict:
+    """지금 화면에 열어 둔 프로젝트(자동 수신 폴더 매칭용)."""
+    pid = (body.get("pid") or "").strip()
+    settings.save_settings({"ui": {"active_project": pid}})
+    return {"ok": True, "active_project": pid}
+
+
 @app.get("/api/projects/{pid}/copy")
 def get_copy(pid: str) -> dict:
     p = _proj(pid)
@@ -563,6 +617,24 @@ def yt_upload(body: dict = Body(default={})) -> dict:
     except youtube.YouTubeError as e:
         raise HTTPException(400, str(e))
     jobs.log_line(pid, f"유튜브 업로드: {res.get('url')} ({res.get('privacy')})")
+    # 첫 고정댓글: 즉시 공개면 바로, 예약/비공개면 공개+90초에 자동 게시
+    comment = {"message": "고정댓글 문구가 없어 건너뜁니다.", "posted": False}
+    pinned = (copy.get("pinned") or "").strip()
+    if pinned and res.get("id"):
+        try:
+            if res.get("privacy") == "public" and not when:
+                c = youtube.post_comment(res["id"], pinned)
+                comment = {"message": pending.PIN_NOTE, "posted": True, "comment_id": c.get("id"),
+                           "video_url": res.get("url")}
+            else:
+                at = (when or datetime.now()) + timedelta(seconds=90)
+                pending.add(res["id"], pinned, at, project_id=pid)
+                comment = {"message": f"공개 예약 {at:%H:%M:%S} 이후 첫 댓글을 자동 게시합니다.",
+                           "posted": False, "at": at.isoformat(timespec="seconds"),
+                           "video_url": res.get("url")}
+        except Exception as e:
+            comment = {"message": f"첫 댓글 자동 게시 실패: {e}", "posted": False}
+        jobs.log_line(pid, f"💬 {comment.get('message')}")
     p.setdefault("uploads", []).append({**res, "at": datetime.now().isoformat(timespec="seconds"),
                                         "comment": comment})
     planner.save_project(p)

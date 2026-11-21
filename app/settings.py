@@ -41,6 +41,18 @@ DEFAULTS: dict = {
         "kling_access_key": "",
         "kling_secret_key": "",
         "kling_api_key": "",
+        "github_token": "",          # 선택: 있으면 이미지 요청 이슈를 자동 생성
+    },
+    "github": {
+        # 케빈과 이미지를 주고받는 저장소
+        "repo": "profusive68-ship-it/tastypop-story-studio",
+        "issue_label": "image-request",
+        "issue_title_prefix": "[이미지요청]",
+    },
+    "assets": {
+        "auto_receive": True,         # 20초마다 자동 이미지 수신(기본 ON)
+        "poll_seconds": 20,
+        "overwrite_on_change": True,  # 같은 이름이라도 내용이 바뀌었으면 교체
     },
     "models": {
         # 대본(시나리오) 생성 모델
@@ -121,6 +133,7 @@ DEFAULTS: dict = {
     },
     "ui": {
         "last_tab": "home",
+        "active_project": "",         # 자동 수신 시 폴더 매칭에 쓰는 '지금 열어 둔 프로젝트'
     },
 }
 
@@ -171,6 +184,7 @@ def save_settings(patch: dict) -> dict:
 def key(name: str) -> str:
     """API 키 조회: 설정 파일 우선, 없으면 환경변수."""
     env = {
+        "github_token": "TASTYPOP_GITHUB_TOKEN",
         "openai": "OPENAI_API_KEY",
         "anthropic": "ANTHROPIC_API_KEY",
         "gemini": "GEMINI_API_KEY",
@@ -184,6 +198,22 @@ def key(name: str) -> str:
 
 def project_dir(ep_id: str) -> Path:
     return PROJECTS_DIR / ep_id
+
+
+def assets_dir() -> Path:
+    """케빈이 GitHub 로 보내는 이미지함 (기본 assets_inbox/)."""
+    return APP_DIR / "assets_inbox"
+
+
+def github_token() -> str:
+    """이미지 요청 이슈용 GitHub 토큰.
+
+    환경변수는 쓰지 않는다(다른 프로그램 토큰이 섞이지 않도록 설정 파일 값만).
+    """
+    try:
+        return str(load_settings()["keys"].get("github_token") or "").strip()
+    except Exception:
+        return ""
 
 
 def client_secret_path() -> Path:

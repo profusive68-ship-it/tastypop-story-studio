@@ -12,6 +12,7 @@
   <span class="ver" id="verLabel">v1.0</span>
   <div class="spacer"></div>
   <span class="pill" id="envPill"><span class="dot"></span>환경 확인 중</span>
+  <button class="btn small" id="btnWatch" title="20초마다 GitHub에서 새 이미지를 자동으로 받아옵니다">🔄 자동 이미지 수신 <b id="watchState">ON</b></button>
   <button class="btn small" id="btnPhone">📱 폰에서 접속하기</button>
   <button class="btn small" id="btnUpdate">🔄 최신 버전 업데이트</button>
   <button class="btn small ghost" id="btnHelp">❓ 사용법</button>
@@ -164,9 +165,10 @@
   <div class="card">
     <div class="row" style="justify-content:space-between">
       <h3 style="margin:0">📥 GitHub로 받은 이미지 (assets_inbox)</h3>
+      <button class="btn small" onclick="manualWatch()">🔄 지금 수신 확인</button>
       <button class="btn small" onclick="loadInbox()">↻ 새로고침</button>
     </div>
-    <div class="hint">케빈이 저장소에 올린 키프레임 묶음을 [📥 프로젝트에 가져오기] 한 번으로 연결합니다.</div>
+    <div class="hint">케빈이 저장소에 올린 키프레임 묶음은 <b>20초마다 자동으로 내려받아 프로젝트 kf/ 에 넣습니다</b>(상단 [🔄 자동 이미지 수신] 토글). 전 컷이 차면 영상 조립까지 자동으로 시작됩니다.</div>
     <div id="inboxList" class="copylist" style="margin-top:10px"><div class="hint">불러오는 중…</div></div>
   </div>
 
@@ -180,11 +182,15 @@
         <div class="row">
           <button class="btn small" id="pdScript">🧠 AI 대본</button>
           <button class="btn small" id="pdImages">🖼️ 이미지 자동 생성</button>
-          <button class="btn small" id="pdReq">📋 케빈에게 보낼 이미지 요청서 복사</button>
+          <button class="btn small primary" id="pdGithub">📤 케빈에게 이미지 요청하기</button>
           <button class="btn small" id="pdFolder">📂 폴더 열기</button>
           <button class="btn primary small" id="pdRender">🎬 영상 조립</button>
         </div>
       </div>
+      <div class="hint" style="margin-top:10px">
+        요청 누르시면 케빈이 5분 이내에 자동 감지해서 이미지를 깃허브로 보내드립니다 (따로 톡 안 주셔도 됩니다!)
+      </div>
+      <div id="pdIssueResult" class="copyrow" style="display:none;margin-top:10px"></div>
       <div class="row" style="margin-top:12px">
         <div class="progress" style="flex:1"><i id="pdBar"></i></div>
         <span class="mono" id="pdPct">0%</span>
@@ -361,6 +367,16 @@
       <input id="k_kling_secret_key" placeholder="SK…">
       <label>Kling API Key <span class="hint">(신규 인증 방식, 있으면 우선)</span></label>
       <input id="k_kling_api_key" placeholder="선택">
+      <label>GitHub 토큰 <span class="hint">(선택 · [📤 케빈에게 이미지 요청하기] 이슈 자동 생성)</span></label>
+      <input id="k_github_token" placeholder="ghp_… (비우면 1클릭 제출 화면이 열립니다)">
+      <div class="hint" style="margin-top:6px">
+        저장소 <span class="mono" id="ghRepo">profusive68-ship-it/tastypop-story-studio</span> · 라벨 <span class="mono">image-request</span><br>
+        토큰은 <b>Issues: Read and write</b> 권한만 있으면 됩니다. 없어도 요청 버튼은 1클릭으로 동작합니다.
+      </div>
+      <div class="row" style="margin-top:8px">
+        <button class="btn small" id="btnGhTest">🔎 깃허브 연결 확인</button>
+        <span class="hint" id="ghState" style="margin:0"></span>
+      </div>
       <div class="row" style="margin-top:12px">
         <button class="btn primary small" id="btnSaveKeys">💾 키 저장</button>
         <span class="hint" style="margin:0">키는 이 맥북 <span class="mono">config/settings.json</span> 에만 저장되고 GitHub 에는 올라가지 않습니다.</span>

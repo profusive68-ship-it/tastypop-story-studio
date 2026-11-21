@@ -147,6 +147,14 @@ def main() -> int:
     check("파이썬 구문 검사", test_compile)
     check("ASMR 사운드 라이브러리", test_sfx)
     check("FastAPI 엔드포인트", test_api)
+    try:
+        sys.path.insert(0, str(ROOT / "tests"))
+        from test_github_inbox import run_all as run_github
+
+        check("깃허브 이미지 요청·자동 수신", run_github)
+    except Exception as e:
+        RESULTS.append(("깃허브 이미지 요청·자동 수신", False, str(e)))
+        print("❌ 깃허브 이미지 요청·자동 수신:", e)
     if not args.skip_render:
         check("렌더 파이프라인(더미 3컷)", lambda: test_render(args.fast))
     bad = [r for r in RESULTS if not r[1]]

@@ -182,6 +182,7 @@ function fillProjectSelects() {
 
 async function openProject(pid) {
   STATE.project = pid;
+  api("/api/watch/active", { method: "POST", body: { pid } }).catch(() => { });   // 자동 수신 폴더 매칭용
   try {
     const p = await api("/api/projects/" + pid);
     $("#projectDetail").style.display = "block";
@@ -401,10 +402,64 @@ $("#pdScript").onclick = async () => {
   catch (e) { toast(e.message); }
 };
 $("#pdFolder").onclick = async () => { if (STATE.project) await api(`/api/open/${STATE.project}`, { method: "GET" }); };
-$("#pdReq").onclick = async () => {
-  if (!STATE.project) return;
-  const r = await fetch(`/api/projects/${STATE.project}/image_request`); copy(await r.text());
-};
+
+/* ---------------- 케빈에게 이미지 요청 (GitHub Issue) ---------------- */
+async function requestFromKevin() {
+  if (!STATE.project) return toast("프로젝트를 먼저 열어 주세요");
+  const btn = $("#pdGithub");
+  btn.disabled = true;
+  btn.textContent = "요청 보내는 중…";
+  try {
+    const r = await api(`/api/projects/${STATE.project}/github-issue`, { method: "POST", body: {} });
+    if (r.url) window.open(r.url, "_blank", "noopener");       // 토큰O: 만들어진 이슈 / 토큰X: 작성 화면
+    if (r.copy_text) copy(r.copy_text);                          // 보조: 요청서 클립보드 복사
+    const box = $("#pdIssueResult");
+    box.style.display = "block";
+    const head = r.mode === "api" ? "✅ 깃허브 이슈 생성됨" : (r.mode === "api_failed" ? "⚠️ 토큰 실패 → 작성 화면으로 대체" : "📝 깃허브 작성 화면 열림");
+    box.innerHTML = `<div class="head"><b>${esc(head)}</b><span class="pill ${r.ok ? "ok" : "warn"}">${esc(r.target_inbox || "")}</span></div>
+      <div class="body">${esc(r.message || "")}</div>
+      ${r.url ? `<div class="body"><a href="${esc(r.url)}" target="_blank">${esc(r.url)}</a></div>` : ""}
+      <div class="row" style="margin-top:8px">
+        <button class="btn small" onclick='copyText(${JSON.stringify(r.copy_text || "")})'>요청서 복사</button>
+        ${r.url ? `<a class="btn small" href="${esc(r.url)}" target="_blank">깃허브에서 열기</a>` : ""}
+      </div>`;
+    toast(r.mode === "api" ? "깃허브 이슈를 만들었습니다 — 케빈이 5분 이내에 이미지를 올립니다" : "작성 화면에서 [Submit new issue] 만 누르면 됩니다");
+  } catch (e) { toast(e.message); }
+  finally { btn.disabled = false; btn.textContent = "📤 케빈에게 이미지 요청하기"; }
+}
+$("#pdGithub").onclick = requestFromKevin;
+
+/* ---------------- 자동 이미지 수신(20초) ---------------- */
+async function loadWatch() {
+  try {
+    const w = await api("/api/watch");
+    STATE.watch = w;
+    const el = $("#watchState");
+    if (el) { el.textContent = w.enabled ? "ON" : "OFF"; el.style.color = w.enabled ? "var(--ok)" : "var(--err)"; }
+    const btn = $("#btnWatch");
+    if (btn) btn.title = `20초마다 GitHub 확인 · ${w.has_git ? "연결됨" : ".git 없음"} · 최근: ${(w.state || {}).last_pull_message || "—"}`;
+  } catch (e) { }
+}
+async function toggleWatch() {
+  const on = !(STATE.watch && STATE.watch.enabled);
+  try {
+    STATE.watch = await api("/api/watch", { method: "POST", body: { on } });
+    await loadWatch();
+    toast(on ? "자동 이미지 수신 ON — 20초마다 깃허브를 확인합니다" : "자동 이미지 수신 OFF");
+  } catch (e) { toast(e.message); }
+}
+$("#btnWatch").onclick = toggleWatch;
+async function manualWatch() {
+  toast("지금 확인 중…");
+  try {
+    const r = await api("/api/watch/now", { method: "POST", body: {} });
+    const got = (r.received || []).reduce((n, x) => n + (x.added || []).length + (x.replaced || []).length, 0);
+    toast(got ? `새 이미지 ${got}장을 받아 kf/ 에 넣었습니다 🎉` : ((r.pull && r.pull.message) || "새 이미지가 없습니다"));
+    await loadInbox(); loadWatch();
+    if (STATE.project) openProject(STATE.project);
+  } catch (e) { toast(e.message); }
+}
+
 async function copyRequest(pid) {
   const r = await fetch(`/api/projects/${pid}/image_request`); copy(await r.text());
 }
@@ -607,9 +662,14 @@ function selectedWeekdays() {
 async function loadSettings() {
   try {
     const s = await api("/api/settings");
-    for (const k of ["gemini", "openai", "anthropic", "kling_access_key", "kling_secret_key", "kling_api_key"]) {
+    for (const k of ["gemini", "openai", "anthropic", "kling_access_key", "kling_secret_key", "kling_api_key", "github_token"]) {
       const el = $("#k_" + k); if (el) el.value = s.keys[k] || "";
     }
+    try {
+      const g = await api("/api/github/status");
+      if ($("#ghRepo")) $("#ghRepo").textContent = g.repo;
+      if ($("#ghState")) $("#ghState").textContent = g.token ? `✓ 토큰 등록됨(끝 ${g.token_tail}) — 이슈 자동 생성` : "토큰 없음 — 1클릭 제출 화면으로 열립니다";
+    } catch (e) { }
     $("#m_script_provider").value = s.models.script_provider;
     $("#m_kling_model").value = s.models.kling_model;
     $("#m_kling_mode").value = s.models.kling_mode;
@@ -639,9 +699,18 @@ async function loadSettings() {
 }
 $("#btnSaveKeys").onclick = async () => {
   const keys = {};
-  for (const k of ["gemini", "openai", "anthropic", "kling_access_key", "kling_secret_key", "kling_api_key"]) keys[k] = $("#k_" + k).value.trim();
+  for (const k of ["gemini", "openai", "anthropic", "kling_access_key", "kling_secret_key", "kling_api_key", "github_token"]) keys[k] = $("#k_" + k).value.trim();
   await api("/api/settings", { method: "POST", body: { keys } });
-  toast("키를 저장했습니다"); loadHealth();
+  toast("키를 저장했습니다"); loadHealth(); loadSettings();
+};
+$("#btnGhTest").onclick = async () => {
+  try {
+    const g = await api("/api/github/status");
+    $("#ghState").textContent = g.token
+      ? `✓ 토큰 등록됨(끝 ${g.token_tail}) · 저장소 ${g.repo} · 라벨 ${g.issue_label}`
+      : `토큰 없음 · 저장소 ${g.repo} (1클릭 제출 화면으로 열립니다)`;
+    toast(g.token ? "GitHub 토큰이 설정되어 있습니다" : "토큰은 없지만 요청 버튼은 동작합니다");
+  } catch (e) { toast(e.message); }
 };
 $("#btnSaveRender").onclick = async () => {
   await api("/api/settings", { method: "POST", body: {
@@ -744,7 +813,8 @@ $("#btnHelp").onclick = () => {
 
 1) [설정]에서 API 키 입력 (없어도 0원 협업 모드로 제작 가능)
 2) [제작] 탭 → 주제 입력 → 콘텐츠 타입 선택 → [프로젝트 만들기]
-3) 0원 모드: 프로젝트 폴더의 kf/ 에 c01.png … 를 넣고 [영상 조립]
+3) 이미지: 프로젝트 화면 [📤 케빈에게 이미지 요청하기] → 케빈이 올리면 20초마다 자동 수신
+   (직접 넣을 때: 프로젝트 kf/ 에 c01.png … → 상단 [🔄 자동 이미지 수신] ON 이면 그대로 진행)
    완전자동: [이미지 자동 생성] → [영상 조립] (Kling 키가 있으면 영상화까지)
 4) 완성되면 [업로드 카피] 탭에서 유튜브·인스타 문구를 복사
 5) [유튜브 예약] 탭에서 예약 시간을 정해 업로드
@@ -757,7 +827,9 @@ $("#btnHelp").onclick = () => {
   await loadHealth();
   await loadProjects();
   await loadTopicCats();
+  await loadWatch();
   const tab = localStorage.getItem("tp_tab") || "home";
   showTab(tab);
   setInterval(loadHealth, 60000);
+  setInterval(loadWatch, 20000);
 })();
