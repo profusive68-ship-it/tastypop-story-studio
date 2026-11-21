@@ -1,0 +1,436 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TastyPop Studio · 원클릭 쇼츠 자동화</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header>
+  <div class="logo">🧀 Tasty<span>Pop</span> Studio</div>
+  <span class="ver" id="verLabel">v1.0</span>
+  <div class="spacer"></div>
+  <span class="pill" id="envPill"><span class="dot"></span>환경 확인 중</span>
+  <button class="btn small" id="btnUpdate">🔄 최신 버전 업데이트</button>
+  <button class="btn small ghost" id="btnHelp">❓ 사용법</button>
+</header>
+
+<nav>
+  <button data-tab="home" class="active">🎬 제작</button>
+  <button data-tab="projects">📁 프로젝트</button>
+  <button data-tab="upload">📤 업로드 카피</button>
+  <button data-tab="youtube">▶️ 유튜브 예약</button>
+  <button data-tab="strategy">📊 채널 전략</button>
+  <button data-tab="comments">💬 댓글 답글</button>
+  <button data-tab="settings">⚙️ 설정</button>
+</nav>
+
+<main>
+<!-- ============================ 제작 ============================ -->
+<section id="tab-home" class="active">
+  <h2>새 쇼츠 만들기</h2>
+  <div class="split">
+    <div class="card">
+      <h3>1. 무엇을 만들까요?</h3>
+      <div class="grid g2">
+        <div class="typecard sel" data-type="asmr3d">
+          <b>🍜 무대사 3D 음식 ASMR</b>
+          <p>13.5~18초 · 9~10컷 밀당 리듬 · 사운드로 몰입</p>
+        </div>
+        <div class="typecard" data-type="drama4">
+          <b>🎭 4인방 캐릭터 숏폼 드라마</b>
+          <p>16.5~21.5초 · 한국어 대사 + 영어 자막</p>
+        </div>
+      </div>
+
+      <label>주제 (음식 / 사연)</label>
+      <input id="inpTopic" placeholder="예: 불닭 치즈 떡볶이, 새벽 2시 주방 대소동">
+      <div class="row" style="margin-top:8px">
+        <span class="pill" style="cursor:pointer" onclick="setTopic('불닭 치즈 떡볶이')">불닭 떡볶이</span>
+        <span class="pill" style="cursor:pointer" onclick="setTopic('김치찌개 끓이는 밤')">김치찌개</span>
+        <span class="pill" style="cursor:pointer" onclick="setTopic('붕어빵 겨울 간식')">붕어빵</span>
+        <span class="pill" style="cursor:pointer" onclick="setTopic('새벽 2시 주방 대소동')">4인방 소동</span>
+      </div>
+
+      <div style="margin-top:16px;border-top:1px solid var(--line);padding-top:12px">
+        <div class="row" style="justify-content:space-between">
+          <b>🔮 주제 추천기</b>
+          <span><button class="btn small" onclick="loadTopics('all')">↻ 추천 받기</button>
+          <button class="btn small" onclick="loadTopics('ai')">✨ AI 트렌드</button></span>
+        </div>
+        <div class="row" id="topicCats" style="margin-top:8px"></div>
+        <div id="topicList" class="hint" style="margin-top:10px">카테고리를 고르면 추천 주제가 나옵니다.</div>
+      </div>
+
+      <div class="grid g3" style="margin-top:12px">
+        <div>
+          <label>에피소드 번호</label>
+          <input id="inpEp" type="number" min="1" value="8">
+        </div>
+        <div>
+          <label>길이 프리셋</label>
+          <select id="selPreset" onchange="setPreset(this.value)">
+            <option value="13.5">13.5초 초압축</option>
+            <option value="16.5">16.5초</option>
+            <option value="18" selected>18초 (기본)</option>
+            <option value="19">19초</option>
+          </select>
+        </div>
+        <div>
+          <label>제작 방식</label>
+          <select id="selMode">
+            <option value="semi">0원 협업·반자동 (이미지/클립 내가 넣기)</option>
+            <option value="auto">완전자동 API (대본·이미지·영상)</option>
+          </select>
+        </div>
+      </div>
+
+      <label>길이 직접 조절 (<span id="secLabel">18</span>초)</label>
+      <input id="inpSecondsRange" type="range" min="13.5" max="21.5" step="0.5" value="18"
+             oninput="document.getElementById('secLabel').textContent=this.value;document.getElementById('inpSeconds').value=this.value">
+      <input type="hidden" id="inpSeconds" value="18">
+
+      <label>첫 0.9초 훅 자막 (영문 한 줄)</label>
+      <input id="inpHook" placeholder="Would you eat this?">
+      <div class="hint">0.000~0.900초 상단에 떠서, 0.900초 컷 전환과 동시에 정확히 사라집니다.</div>
+
+      <div style="margin-top:14px">
+        <label style="margin-bottom:8px"><b>이탈률 제로 & 저장/공유 공식</b> (기본 전부 ON)</label>
+        <div class="row" style="gap:14px">
+          <label style="margin:0"><input type="checkbox" id="op_hook" checked> 0.900초 훅 자막</label>
+          <label style="margin:0"><input type="checkbox" id="op_flash" checked> 0.000초 임팩트</label>
+          <label style="margin:0"><input type="checkbox" id="op_three_cut" checked> 3컷 연타 리듬</label>
+          <label style="margin:0"><input type="checkbox" id="op_mid_device" checked> 중간 이탈방지</label>
+          <label style="margin:0"><input type="checkbox" id="op_wink_cta" checked> 눈치 윙크</label>
+          <label style="margin:0"><input type="checkbox" id="op_cta" checked> 1.5초 CTA</label>
+          <label style="margin:0"><input type="checkbox" id="op_loop" checked> 0.25초 무한루프</label>
+          <label style="margin:0"><input type="checkbox" id="op_whoosh" checked> 컷 스우시</label>
+        </div>
+      </div>
+
+      <label style="margin-top:14px">업로드 방법</label>
+      <select id="selUploadMethod">
+        <option value="youtube">① YouTube 예약 자동 업로드</option>
+        <option value="instagram">② 인스타 릴스용 패키지 + 체크리스트 저장</option>
+        <option value="local">③ 로컬 MP4 + 카피만 저장</option>
+      </select>
+
+      <div class="row" style="margin-top:16px">
+        <button class="btn primary" id="btnCreate">✚ 프로젝트 만들기</button>
+        <button class="btn" id="btnCreateRun">⚡ 만들고 바로 제작</button>
+      </div>
+      <div class="hint">0원 모드: 프로젝트를 만들면 <b>이미지_요청서.txt</b> 가 생성됩니다. 여기에 맞춰 <b>kf/</b> 폴더에 c01.png … 를 넣고 [영상 조립]만 누르면 됩니다.</div>
+    </div>
+
+    <div class="card">
+      <h3>미리보기</h3>
+      <div style="position:relative;width:100%;max-width:300px;margin:0 auto">
+        <img id="previewBase" src="/api/text_overlay?text=&kind=safe" style="width:100%;border-radius:12px;background:#0b0d11;border:1px solid var(--line)">
+      </div>
+      <div class="hint">초록 테두리 = 모바일 안전영역(가운데 78%). 빨간 영역은 유튜브/인스타 UI에 가려지는 곳입니다.</div>
+      <label style="margin-top:14px">훅 자막 미리보기</label>
+      <img id="previewHook" src="/api/text_overlay?text=Would%20you%20eat%20this%3F&kind=hook" style="width:100%;border-radius:10px;background:#12151b;border:1px solid var(--line)">
+    </div>
+  </div>
+
+  <div class="card" id="progressCard" style="display:none">
+    <h3>실시간 진행률</h3>
+    <div class="row" style="justify-content:space-between"><span id="progressStage">대기</span><span class="mono" id="progressPct">0%</span></div>
+    <div class="progress" style="margin:8px 0 12px"><i id="progressBar"></i></div>
+    <div class="logbox" id="progressLog"></div>
+    <div class="row" style="margin-top:10px">
+      <button class="btn small" id="btnOpenProject">프로젝트 열기</button>
+      <a class="btn small" id="linkVideo" style="display:none" target="_blank">▶ 완성 영상 재생</a>
+    </div>
+  </div>
+</section>
+
+<!-- ============================ 프로젝트 ============================ -->
+<section id="tab-projects">
+  <h2>프로젝트</h2>
+  <div class="row" style="margin-bottom:12px">
+    <button class="btn small" onclick="loadProjects()">↻ 새로고침</button>
+    <span class="hint" style="margin:0">폴더: <span class="mono" id="projectsDir"></span></span>
+  </div>
+  <div class="card">
+    <table>
+      <thead><tr><th>Ep</th><th>주제</th><th>타입</th><th>상태</th><th>길이</th><th>컷</th><th></th></tr></thead>
+      <tbody id="projectRows"><tr><td colspan="7" class="hint">불러오는 중…</td></tr></tbody>
+    </table>
+  </div>
+
+  <div class="card">
+    <div class="row" style="justify-content:space-between">
+      <h3 style="margin:0">📥 GitHub로 받은 이미지 (assets_inbox)</h3>
+      <button class="btn small" onclick="loadInbox()">↻ 새로고침</button>
+    </div>
+    <div class="hint">케빈이 저장소에 올린 키프레임 묶음을 [📥 프로젝트에 가져오기] 한 번으로 연결합니다.</div>
+    <div id="inboxList" class="copylist" style="margin-top:10px"><div class="hint">불러오는 중…</div></div>
+  </div>
+
+  <div id="projectDetail" style="display:none">
+    <div class="card">
+      <div class="row" style="justify-content:space-between">
+        <div>
+          <h3 id="pdTitle" style="margin:0"></h3>
+          <div class="hint" id="pdMeta"></div>
+        </div>
+        <div class="row">
+          <button class="btn small" id="pdScript">🧠 AI 대본</button>
+          <button class="btn small" id="pdImages">🖼️ 이미지 자동 생성</button>
+          <button class="btn small" id="pdReq">📋 케빈에게 보낼 이미지 요청서 복사</button>
+          <button class="btn small" id="pdFolder">📂 폴더 열기</button>
+          <button class="btn primary small" id="pdRender">🎬 영상 조립</button>
+        </div>
+      </div>
+      <div class="row" style="margin-top:12px">
+        <div class="progress" style="flex:1"><i id="pdBar"></i></div>
+        <span class="mono" id="pdPct">0%</span>
+        <span class="pill" id="pdStage">대기</span>
+      </div>
+      <div class="logbox" id="pdLog" style="margin-top:10px"></div>
+    </div>
+
+    <div class="card" id="pdMediaCard">
+      <div class="row" style="justify-content:space-between">
+        <h3 style="margin:0">🖼️ 이미지 자동 감지 <span class="hint">(kf 폴더 · kf1.png~kf10.png)</span></h3>
+        <span class="pill" id="pdMediaPill"><span class="dot"></span>확인 중</span>
+      </div>
+      <div class="hint" id="pdMediaText" style="margin-top:8px"></div>
+      <div class="row" style="margin-top:10px">
+        <button class="btn small" onclick="checkMedia(true)">↻ 지금 확인 + 자동 진행</button>
+        <button class="btn small" onclick="openFolderMedia()">📂 kf 폴더 열기</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>✏️ 수정 지시 <span class="hint">— 한 줄로 시나리오·타임라인 자동 재조정</span></h3>
+      <div class="row">
+        <input id="inpRevise" style="flex:1" placeholder="예: 3컷 더 빠르게, 치즈 늘어나는 소리 크게 / 전체 19초로 늘리고 마지막 컷 길게">
+        <button class="btn primary small" id="btnRevise">지시 반영</button>
+      </div>
+      <div class="hint" id="reviseNote" style="margin-top:8px">AI 키가 있으면 장면·대사까지, 없으면 컷 길이·효과음 볼륨을 규칙 기반으로 조정합니다.</div>
+    </div>
+
+    <div class="card">
+      <h3>📤 업로드 방법</h3>
+      <div class="row">
+        <label style="margin:0"><input type="radio" name="upmethod" value="youtube"> ① YouTube 예약 자동 업로드</label>
+        <label style="margin:0"><input type="radio" name="upmethod" value="instagram"> ② 인스타 릴스용 패키지 + 체크리스트</label>
+        <label style="margin:0"><input type="radio" name="upmethod" value="local"> ③ 로컬 MP4 + 카피만</label>
+        <button class="btn small" id="btnPackage">실행</button>
+      </div>
+      <pre id="packageResult" style="display:none;margin-top:10px"></pre>
+    </div>
+
+    <div class="grid g2">
+      <div class="card">
+        <h3>컷 편집 <span class="hint">(장면·대사·효과음을 직접 수정)</span></h3>
+        <div class="cutlist" id="pdCuts"></div>
+      </div>
+      <div class="card">
+        <h3>산출물</h3>
+        <div id="pdFiles" class="copylist"></div>
+        <label style="margin-top:12px">훅 문구 수정</label>
+        <div class="row"><input id="pdHook" style="flex:1"><button class="btn small" id="pdSaveHook">저장</button></div>
+        <label>마지막 1.5초 CTA</label>
+        <div class="row">
+          <input id="pdCta1" placeholder="♥ Like · ✈ Share" style="flex:1">
+          <input id="pdCta2" placeholder="Save for 2 AM" style="flex:1">
+          <button class="btn small" id="pdSaveCta">저장</button>
+        </div>
+        <div style="margin-top:14px">
+          <img id="pdThumb" class="mini" style="max-width:180px;display:none">
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================ 업로드 카피 ============================ -->
+<section id="tab-upload">
+  <h2>업로드 카피</h2>
+  <div class="row" style="margin-bottom:12px">
+    <select id="selCopyProject" style="max-width:420px"></select>
+    <button class="btn small" id="btnReloadCopy">↻ 카피 새로 만들기</button>
+  </div>
+  <div class="grid g2">
+    <div class="card">
+      <h3>▶️ 유튜브</h3>
+      <div class="copylist" id="ytCopy"></div>
+    </div>
+    <div class="card">
+      <h3>📸 인스타그램</h3>
+      <div class="copylist" id="igCopy"></div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================ 유튜브 예약 ============================ -->
+<section id="tab-youtube">
+  <h2>유튜브 예약 업로드</h2>
+  <div class="card">
+    <div class="row" style="justify-content:space-between">
+      <div id="ytStatus" class="hint">확인 중…</div>
+      <div class="row">
+        <button class="btn small" id="btnYtLogin">🔑 유튜브 로그인</button>
+        <button class="btn small" onclick="loadYt()">↻ 새로고침</button>
+      </div>
+    </div>
+    <div class="hint" style="margin-top:8px">
+      처음 한 번만: 구글 클라우드에서 받은 <span class="mono">client_secret.json</span> 을 <span class="mono">config/</span> 폴더에 넣고 [유튜브 로그인] → 브라우저에서 채널 선택.
+      (구글 앱 인증 전에는 API 업로드가 <b>비공개</b>로만 올라갈 수 있습니다.)
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>업로드할 영상</h3>
+    <div class="row">
+      <select id="selUpProject" style="max-width:420px"></select>
+      <label style="margin:0">공개</label>
+      <select id="selUpPrivacy" style="width:150px">
+        <option value="scheduled">예약 공개</option>
+        <option value="private">비공개</option>
+        <option value="unlisted">일부 공개</option>
+        <option value="public">즉시 공개</option>
+      </select>
+      <input id="inpUpDate" type="date" style="width:170px">
+      <input id="inpUpTime" type="time" value="19:00" style="width:130px">
+      <button class="btn primary small" id="btnUpload">🚀 업로드 시작</button>
+    </div>
+    <div class="hint">기본 골든타임 19:00~20:30. 예약 공개는 유튜브 규정상 '비공개 + 공개 예약시각' 조합으로 전송됩니다.</div>
+    <pre id="upResult" style="display:none;margin-top:12px"></pre>
+  </div>
+
+  <div class="card">
+    <h3>💬 고정댓글 자동 게시</h3>
+    <div class="hint">즉시 공개면 업로드 직후 바로 달립니다. 예약 공개는 <b>공개 + 90초</b>에 자동 게시됩니다.
+      (유튜브 API 는 핀 고정 기능이 없어, 게시 후 상단 고정 핀만 앱/웹에서 1클릭)</div>
+    <div id="pendingList" class="copylist" style="margin-top:10px"></div>
+  </div>
+
+  <div class="card">
+    <h3>최근 업로드</h3>
+    <table><thead><tr><th>제목</th><th>공개</th><th>조회</th><th>좋아요</th><th>댓글</th><th></th></tr></thead>
+      <tbody id="ytRows"><tr><td colspan="6" class="hint">로그인하면 표시됩니다.</td></tr></tbody></table>
+  </div>
+</section>
+
+<!-- ============================ 전략 ============================ -->
+<section id="tab-strategy">
+  <h2>채널 전략 분석 <span class="hint">— 승인하면 바로 진행됩니다</span></h2>
+  <div class="row" style="margin-bottom:12px">
+    <button class="btn small primary" id="btnAnalyze">📊 다시 분석</button>
+    <span class="hint" id="strategyMeta" style="margin:0"></span>
+  </div>
+  <div class="grid g2" id="strategyCards"></div>
+</section>
+
+<!-- ============================ 댓글 ============================ -->
+<section id="tab-comments">
+  <h2>댓글 답글 도우미</h2>
+  <div class="row" style="margin-bottom:12px">
+    <input id="inpCommentVideo" placeholder="영상 ID (비우면 최근 전체)" style="max-width:380px">
+    <button class="btn small" onclick="loadComments()">↻ 댓글 불러오기</button>
+  </div>
+  <div id="commentList" class="copylist"></div>
+</section>
+
+<!-- ============================ 설정 ============================ -->
+<section id="tab-settings">
+  <h2>설정</h2>
+  <div class="grid g2">
+    <div class="card">
+      <h3>API 키</h3>
+      <label>Gemini API 키 <span class="hint">(대본 + 무료 이미지 생성)</span></label>
+      <input id="k_gemini" placeholder="AIza…">
+      <div class="hint" style="margin-top:6px">
+        💡 <b>무료 이미지 생성</b>: 구글 AI Studio 무료 티어 키로 이미지를 자동 생성할 수 있습니다.
+        발급: <a href="https://aistudio.google.com/apikey" target="_blank">aistudio.google.com/apikey</a>
+        (무료 범위 내에서 동작하며, 한도 초과 시 다음 날 자동 복구)
+      </div>
+      <label>OpenAI API 키 <span class="hint">(대본 대안)</span></label>
+      <input id="k_openai" placeholder="sk-…">
+      <label>Claude API 키 <span class="hint">(대본 대안)</span></label>
+      <input id="k_anthropic" placeholder="sk-ant-…">
+      <label>Kling Access Key</label>
+      <input id="k_kling_access_key" placeholder="AK…">
+      <label>Kling Secret Key</label>
+      <input id="k_kling_secret_key" placeholder="SK…">
+      <label>Kling API Key <span class="hint">(신규 인증 방식, 있으면 우선)</span></label>
+      <input id="k_kling_api_key" placeholder="선택">
+      <div class="row" style="margin-top:12px">
+        <button class="btn primary small" id="btnSaveKeys">💾 키 저장</button>
+        <span class="hint" style="margin:0">키는 이 맥북 <span class="mono">config/settings.json</span> 에만 저장되고 GitHub 에는 올라가지 않습니다.</span>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>제작 기본값</h3>
+      <div class="grid g2">
+        <div><label>대본 제공자</label>
+          <select id="m_script_provider">
+            <option value="gemini">Gemini</option><option value="openai">OpenAI</option><option value="anthropic">Claude</option>
+          </select></div>
+        <div><label>Kling 모델</label><input id="m_kling_model"></div>
+        <div><label>Kling 모드</label>
+          <select id="m_kling_mode"><option value="std">std (가성비)</option><option value="pro">pro (고품질)</option></select></div>
+        <div><label>인코더</label>
+          <select id="m_encoder"><option value="auto">자동(하드웨어 가속)</option><option value="h264_videotoolbox">h264_videotoolbox</option><option value="libx264">libx264</option></select></div>
+        <div><label>라우드니스(LUFS)</label><input id="m_lufs" type="number" step="0.5" value="-12.5"></div>
+        <div><label>훅 자막 크기(px)</label><input id="m_hook_size" type="number" value="66"></div>
+        <div><label>안전영역(비율)</label><input id="m_safe_area" type="number" step="0.01" value="0.78"></div>
+        <div><label>0.000초 플래시 임팩트</label>
+          <select id="m_flash"><option value="true">ON</option><option value="false">OFF</option></select></div>
+      </div>
+      <div class="row" style="margin-top:12px"><button class="btn primary small" id="btnSaveRender">💾 저장</button></div>
+    </div>
+
+    <div class="card">
+      <h3>일일 자동 예약</h3>
+      <div class="grid g2">
+        <div><label>자동 제작</label>
+          <select id="s_enabled"><option value="false">OFF</option><option value="true">ON</option></select></div>
+        <div><label>제작 시간</label><input id="s_time" type="time" value="07:00"></div>
+        <div><label>콘텐츠 타입</label>
+          <select id="s_type"><option value="asmr3d">무대사 3D ASMR</option><option value="drama4">4인방 드라마</option></select></div>
+        <div><label>자동 업로드</label>
+          <select id="s_upload"><option value="false">OFF</option><option value="true">ON</option></select></div>
+        <div><label>업로드 시각</label><input id="s_hour" type="number" min="0" max="23" value="19"></div>
+        <div><label>다음 편 번호</label><input id="s_ep" type="number" placeholder="자동"></div>
+      </div>
+      <label>실행 요일</label>
+      <div class="row" id="weekdayBox" style="gap:8px"></div>
+      <div class="row" style="margin-top:12px">
+        <button class="btn primary small" id="btnSaveSched">💾 저장</button>
+        <span class="hint" id="schedState" style="margin:0"></span>
+      </div>
+      <div class="row" style="margin-top:10px">
+        <button class="btn small" id="btnLaunchd">⏰ launchd 등록 (맥북이 꺼져 있어도 실행)</button>
+        <button class="btn small ghost" id="btnUnlaunchd">등록 해제</button>
+        <button class="btn small" id="btnRunNow">▶ 지금 1편 자동 제작</button>
+      </div>
+      <div class="hint" id="launchdState" style="margin-top:8px"></div>
+    </div>
+
+    <div class="card">
+      <h3>환경 · 버전</h3>
+      <div id="envDetail" class="hint">확인 중…</div>
+      <div class="row" style="margin-top:12px">
+        <button class="btn small" onclick="loadHealth()">↻ 환경 다시 확인</button>
+        <button class="btn small" onclick="regenSfx()">🔊 사운드 라이브러리 재생성</button>
+      </div>
+      <details style="margin-top:14px">
+        <summary>사운드 라이브러리 목록</summary>
+        <div id="sfxList" class="hint" style="margin-top:8px"></div>
+      </details>
+    </div>
+  </div>
+</section>
+</main>
+
+<div class="toast" id="toast"></div>
+<script src="/static/app.js"></script>
+</body>
+</html>

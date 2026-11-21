@@ -1,0 +1,22 @@
+# 프로그램 코드 + 협업 이미지함만 GitHub 에 올라갑니다.
+# (API 키·유튜브 토큰·개인 설정·만든 영상은 절대 올라가지 않습니다)
+
+# ==== 절대 커밋 금지 (민감 정보) ====
+config/
+projects/
+.venv/
+venv/
+__pycache__/
+*.pyc
+*.pyo
+.DS_Store
+
+# ==== 대용량/임시 ====
+sfx_library/*.wav
+work/
+output/
+*.log
+
+# ==== 협업 이미지함은 GitHub 에 포함 (케빈 ↔ 맥북 이미지 전달용) ====
+!assets_inbox/
+!assets_inbox/**
