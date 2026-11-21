@@ -25,6 +25,7 @@ from pathlib import Path
 from . import jobs, planner, settings
 
 KF_EXT = (".png", ".jpg", ".jpeg", ".webp")
+CLIP_EXT = (".mp4", ".mov", ".webm")
 MAX_LOG = 80
 
 _log: deque[str] = deque(maxlen=MAX_LOG)
@@ -207,6 +208,18 @@ def _images(folder: Path) -> list[Path]:
             if p.is_file() and p.suffix.lower() in KF_EXT and not p.name.startswith(".")]
 
 
+def _clips(folder: Path) -> list[Path]:
+    if not folder.is_dir():
+        return []
+    out = [p for p in sorted(folder.iterdir())
+           if p.is_file() and p.suffix.lower() in CLIP_EXT and not p.name.startswith(".")]
+    sub = folder / "clips"
+    if sub.is_dir():
+        out.extend(p for p in sorted(sub.iterdir())
+                   if p.is_file() and p.suffix.lower() in CLIP_EXT and not p.name.startswith("."))
+    return out
+
+
 def _folder_signature(files: list[Path]) -> str:
     h = hashlib.sha1()
     for p in files:
@@ -221,7 +234,7 @@ def inbox_folders(root: Path | None = None) -> list[Path]:
         return []
     out = []
     for d in sorted(root.iterdir()):
-        if d.is_dir() and not d.name.startswith(".") and _images(d):
+        if d.is_dir() and not d.name.startswith(".") and (_images(d) or _clips(d)):
             out.append(d)
     return out
 
@@ -236,34 +249,48 @@ def _dest_for(pid: str, cut_id: int, ext: str) -> Path:
     return kf / f"c{cut_id:02d}{ext}"
 
 
+def _dest_for_clip(pid: str, cut_id: int, ext: str) -> Path:
+    clips = planner.project_dir(pid) / "clips"
+    clips.mkdir(parents=True, exist_ok=True)
+    for n in planner.clip_names(cut_id):
+        p = clips / n
+        if p.exists():
+            return p
+    return clips / f"c{cut_id:02d}{ext}"
+
+
 def receive_folder(folder: Path, pid: str, overwrite: bool | None = None) -> dict:
-    """한 묶음 폴더의 이미지를 projects/{pid}/kf 로 복사(내용이 다를 때만 교체)."""
+    """한 묶음 폴더의 이미지/클립을 projects/{pid}/kf·clips 로 복사(내용이 다를 때만 교체)."""
     overwrite = overwrite_on_change() if overwrite is None else overwrite
     project = planner.load_project(pid)
     n_cuts = len(project["cuts"])
-    files = _images(folder)
-    parsed = []
-    for p in files:
-        m = re.search(r"(\d+)", p.stem)
-        parsed.append((int(m.group(1)) if m else None, p))
-    if all(num is not None for num, _ in parsed):
-        parsed.sort(key=lambda x: x[0])
     added, replaced, skipped, outside = [], [], [], []
-    for idx, (num, src) in enumerate(parsed, start=1):
-        cut_id = num if num and 1 <= num <= n_cuts else idx
-        if cut_id > n_cuts:
-            outside.append(src.name)
-            continue
-        dst = _dest_for(pid, cut_id, src.suffix.lower())
-        if dst.exists():
-            if not overwrite or _sha1(dst) == _sha1(src):
-                skipped.append(dst.name)
+
+    def _copy_group(files: list[Path], dest_fn) -> None:
+        parsed = []
+        for p in files:
+            m = re.search(r"(\d+)", p.stem)
+            parsed.append((int(m.group(1)) if m else None, p))
+        if all(num is not None for num, _ in parsed):
+            parsed.sort(key=lambda x: x[0])
+        for idx, (num, src) in enumerate(parsed, start=1):
+            cut_id = num if num and 1 <= num <= n_cuts else idx
+            if cut_id > n_cuts:
+                outside.append(src.name)
+                continue
+            dst = dest_fn(pid, cut_id, src.suffix.lower())
+            if dst.exists():
+                if not overwrite or _sha1(dst) == _sha1(src):
+                    skipped.append(dst.name)
+                    continue
+                shutil.copy2(src, dst)
+                replaced.append(f"{src.name}→{dst.name}")
                 continue
             shutil.copy2(src, dst)
-            replaced.append(f"{src.name}→{dst.name}")
-            continue
-        shutil.copy2(src, dst)
-        added.append(f"{src.name}→{dst.name}")
+            added.append(f"{src.name}→{dst.name}")
+
+    _copy_group(_images(folder), _dest_for)
+    _copy_group(_clips(folder), _dest_for_clip)
     st = planner.media_status(planner.load_project(pid))
     return {"project_id": pid, "folder": folder.name, "added": added, "replaced": replaced,
             "skipped": skipped, "outside_cuts": outside, "media": st}
@@ -295,7 +322,7 @@ def receive_once(root: Path | None = None, do_pull: bool = True, do_render: bool
         return summary
     projects = planner.list_projects()
     for folder in folders:
-        files = _images(folder)
+        files = _images(folder) + _clips(folder)
         sig = _folder_signature(files)
         rec = state["folders"].get(folder.name) or {}
         if rec.get("sig") == sig and rec.get("target"):
