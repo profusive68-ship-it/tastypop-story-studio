@@ -8,16 +8,37 @@ import threading
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from fastapi import Body, FastAPI, HTTPException
+from fastapi import Body, FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
-from . import (audio, copywriter, ffmpeg_tools, fonts, jobs, kling, llm, pending, planner,
+from . import (audio, copywriter, ffmpeg_tools, fonts, jobs, kling, llm, net, pending, planner,
                render, revise, scheduler, settings, sfx, strategy, topics, tts, youtube)
 
 app = FastAPI(title="TastyPop Studio", version=settings.VERSION)
 WEB = settings.WEB_DIR
 app.mount("/static", StaticFiles(directory=str(WEB)), name="static")
+
+
+@app.middleware("http")
+async def pin_guard(request: Request, call_next):
+    """PIN 이 설정되어 있으면 외부(폰·다른 PC) 접속에 PIN 을 요구한다.
+
+    맥북 자신(127.0.0.1/::1)은 항상 허용.
+    """
+    pin = net.pin()
+    host = request.client.host if request.client else ""
+    if not pin or host in ("127.0.0.1", "::1", "localhost"):
+        return await call_next(request)
+    given = request.query_params.get("pin") or request.cookies.get("tp_pin")
+    if given == pin:
+        resp = await call_next(request)
+        if request.query_params.get("pin"):
+            resp.set_cookie("tp_pin", pin, max_age=60 * 60 * 24 * 30, httponly=True, samesite="lax")
+        return resp
+    if request.url.path.startswith("/static"):
+        return await call_next(request)
+    return HTMLResponse((WEB / "login.html").read_text(encoding="utf-8"), status_code=401)
 
 
 @app.on_event("startup")
@@ -29,6 +50,45 @@ def _startup() -> None:
         print("[sfx] 라이브러리 생성 실패:", e)
     scheduler.start()
     pending.start_worker()
+
+
+@app.get("/api/remote")
+def remote_info() -> dict:
+    return {
+        "urls": net.urls(),
+        "pin": bool(net.pin()),
+        "pin_length": len(net.pin()),
+        "port": net.port(),
+        "tailscale": net.tailscale_ip(),
+        "lan": net.lan_ip(),
+        "all_ips": net.all_ipv4(),
+        "caffeinate": net.caffeinate_status(),
+    }
+
+
+@app.post("/api/remote/pin")
+def remote_pin(body: dict = Body(default={})) -> dict:
+    value = net.set_pin(body.get("pin", ""))
+    return {"ok": True, "pin": value, "enabled": bool(value),
+            "message": "PIN 잠금을 켰습니다." if value else "PIN 잠금을 해제했습니다.",
+            "urls": net.urls()}
+
+
+@app.post("/api/remote/caffeinate")
+def remote_caffeinate(body: dict = Body(default={})) -> dict:
+    res = net.caffeinate_on() if body.get("on", True) else net.caffeinate_off()
+    return {**res, "status": net.caffeinate_status()}
+
+
+@app.get("/api/qr.png")
+def qr(text: str = "") -> Response:
+    target = text or (net.urls()[0]["url"] if net.urls() else "http://localhost:8766/")
+    out = settings.CONFIG_DIR / "cache" / "remote_qr.png"
+    try:
+        net.qr_png(target, out)
+    except Exception as e:
+        raise HTTPException(400, str(e))
+    return FileResponse(str(out), media_type="image/png", headers={"Cache-Control": "no-store"})
 
 
 # ------------------------------------------------------------------ 화면

@@ -12,6 +12,7 @@
   <span class="ver" id="verLabel">v1.0</span>
   <div class="spacer"></div>
   <span class="pill" id="envPill"><span class="dot"></span>환경 확인 중</span>
+  <button class="btn small" id="btnPhone">📱 폰에서 접속하기</button>
   <button class="btn small" id="btnUpdate">🔄 최신 버전 업데이트</button>
   <button class="btn small ghost" id="btnHelp">❓ 사용법</button>
 </header>
@@ -429,6 +430,51 @@
   </div>
 </section>
 </main>
+
+<div class="modal" id="phoneModal" style="display:none">
+  <div class="modal-box">
+    <div class="row" style="justify-content:space-between">
+      <h3 style="margin:0">📱 폰에서 접속하기</h3>
+      <button class="btn small ghost" onclick="closePhone()">닫기 ✕</button>
+    </div>
+    <div class="hint" style="margin-top:6px">아이폰 카메라로 아래 QR 을 찍으면 대시보드가 바로 열립니다.</div>
+    <div class="grid g2" style="margin-top:12px;align-items:start">
+      <div>
+        <div id="phoneUrlList" class="copylist"></div>
+        <label style="margin-top:12px">접속 비밀번호(PIN) <span class="hint">4~8자리 · 비우면 잠금 해제</span></label>
+        <div class="row">
+          <input id="inpPin" inputmode="numeric" maxlength="8" placeholder="예: 6319" style="max-width:150px">
+          <button class="btn small primary" onclick="savePin()">저장</button>
+        </div>
+        <div class="hint" id="pinState" style="margin-top:6px"></div>
+        <div class="row" style="margin-top:14px">
+          <button class="btn small" id="btnCaffeinate">☕ 맥북 잠자기 방지</button>
+          <span class="hint" id="caffState" style="margin:0"></span>
+        </div>
+      </div>
+      <div style="text-align:center">
+        <img id="qrImg" alt="QR" style="width:220px;height:220px;background:#fff;border-radius:12px;padding:6px">
+        <div class="hint" id="qrTarget" style="word-break:break-all"></div>
+      </div>
+    </div>
+    <details style="margin-top:14px">
+      <summary>접속 방법 자세히 (집 / 외출)</summary>
+      <div class="hint" style="margin-top:8px;line-height:1.7">
+        <b>집·사무실(같은 Wi-Fi)</b><br>
+        1) 아이폰이 맥북과 <b>같은 Wi-Fi</b>에 연결되어 있는지 확인<br>
+        2) 위 QR 을 카메라로 찍거나 `http://맥북IP:8766` 을 사파리 주소창에 입력<br>
+        3) PIN 을 설정했다면 PIN 입력 → 끝!<br><br>
+        <b>외출 시(무료 Tailscale)</b><br>
+        1) 맥북과 아이폰에 <b>Tailscale</b> 앱 설치 → 같은 계정으로 로그인<br>
+        2) 맥북에서 Tailscale 켜기 → 위 목록에 Tailscale 주소가 자동으로 나타남<br>
+        3) 그 주소의 QR 을 찍으면 어디서든 접속 (데이터 요금만 사용)<br><br>
+        <b>보안 팁</b><br>
+        · 공용 Wi-Fi 에서는 반드시 PIN 을 켜 두세요.<br>
+        · PIN 은 이 프로젝트의 <span class="mono">config/settings.json</span> 에만 저장되고 GitHub 에는 올라가지 않습니다.
+      </div>
+    </details>
+  </div>
+</div>
 
 <div class="toast" id="toast"></div>
 <script src="/static/app.js"></script>

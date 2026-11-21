@@ -680,6 +680,47 @@ $("#btnRunNow").onclick = async () => {
 };
 async function regenSfx() { toast("사운드 생성 중…"); const r = await api("/api/sfx/regenerate", { method: "POST" }); toast(r.count + "개 생성 완료"); loadSettings(); }
 
+/* ---------------- 폰 접속 ---------------- */
+async function openPhone() {
+  $("#phoneModal").style.display = "flex";
+  try {
+    const d = await api("/api/remote");
+    $("#phoneUrlList").innerHTML = (d.urls || []).map(u => `
+      <div class="copyrow">
+        <div class="head"><b>${u.kind === "wifi" ? "🏠" : (u.kind === "tailscale" ? "🌍" : "💻")} ${esc(u.label)}</b>
+          <button class="btn small" onclick="copyText('${esc(u.url)}')">복사</button></div>
+        <div class="body mono" style="word-break:break-all">${esc(u.url)}</div>
+      </div>`).join("");
+    const target = (d.urls || [])[0] || { url: "http://localhost:8766/" };
+    const pinq = d.pin ? "" : "";
+    $("#qrImg").src = `/api/qr.png?text=${encodeURIComponent(target.url + pinq)}&t=${Date.now()}`;
+    $("#qrTarget").textContent = target.url;
+    $("#inpPin").value = "";
+    $("#pinState").textContent = d.pin ? `PIN 잠금 켜짐 (${d.pin_length}자리)` : "PIN 잠금 꺼짐 — 같은 Wi-Fi 의 누구나 접속할 수 있습니다";
+    const c = d.caffeinate || {};
+    $("#caffState").textContent = c.available ? (c.running ? "켜짐 — 맥북이 잠들지 않습니다" : "꺼짐") : "이 기기에서는 사용할 수 없습니다(macOS 전용)";
+    $("#btnCaffeinate").textContent = c.running ? "☕ 잠자기 방지 끄기" : "☕ 맥북 잠자기 방지 켜기";
+    $("#btnCaffeinate").dataset.on = c.running ? "1" : "0";
+    if (d.tailscale) { /* Tailscale 감지됨 */ }
+  } catch (e) { toast(e.message); }
+}
+function closePhone() { $("#phoneModal").style.display = "none"; }
+$("#btnPhone").onclick = openPhone;
+$("#phoneModal").addEventListener("click", (e) => { if (e.target.id === "phoneModal") closePhone(); });
+async function savePin() {
+  const v = $("#inpPin").value.replace(/[^0-9]/g, "").slice(0, 8);
+  const r = await api("/api/remote/pin", { method: "POST", body: { pin: v } });
+  toast(r.message);
+  if (r.enabled) toast("PIN: " + r.pin + " — 폰에서 이 번호를 입력하세요");
+  openPhone();
+}
+$("#btnCaffeinate").onclick = async () => {
+  const on = $("#btnCaffeinate").dataset.on !== "1";
+  const r = await api("/api/remote/caffeinate", { method: "POST", body: { on } });
+  toast(r.message || (on ? "잠자기 방지 ON" : "잠자기 방지 OFF"));
+  openPhone();
+};
+
 /* ---------------- 업데이트 / 도움말 ---------------- */
 $("#btnUpdate").onclick = async () => {
   try {

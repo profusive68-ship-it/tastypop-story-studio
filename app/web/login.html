@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TastyPop Studio · PIN</title>
+<style>
+  body{background:#0f1115;color:#eef1f6;font-family:-apple-system,"Apple SD Gothic Neo",sans-serif;
+       display:flex;min-height:100vh;align-items:center;justify-content:center;margin:0}
+  .box{background:#171a21;border:1px solid #2b313c;border-radius:18px;padding:26px;width:min(92vw,340px)}
+  h1{font-size:19px;margin:0 0 6px}
+  p{color:#9aa4b2;font-size:13px;margin:0 0 16px;line-height:1.5}
+  input{width:100%;box-sizing:border-box;background:#0d0f13;color:#eef1f6;border:1px solid #2b313c;
+        border-radius:10px;padding:12px;font-size:18px;letter-spacing:6px;text-align:center}
+  button{width:100%;margin-top:12px;padding:13px;border:0;border-radius:11px;font-weight:800;font-size:15px;
+         background:linear-gradient(135deg,#ffb03a,#ff6b3d);color:#20160a}
+</style>
+</head>
+<body>
+<div class="box">
+  <h1>🧀 TastyPop Studio</h1>
+  <p>맥북 대시보드 접속 비밀번호(PIN)를 입력하세요.<br>PIN 은 맥북 대시보드 [📱 폰에서 접속하기] 에서 확인·변경할 수 있습니다.</p>
+  <form method="get" action="/">
+    <input name="pin" inputmode="numeric" pattern="[0-9]*" autofocus placeholder="••••">
+    <button>접속하기</button>
+  </form>
+</div>
+</body>
+</html>

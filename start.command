@@ -56,18 +56,32 @@ if ! command -v ffmpeg >/dev/null 2>&1 && [ ! -x ".venv/bin/ffmpeg" ]; then
 fi
 
 # 5) 서버 실행 --------------------------------------------------------------
-PORT=$(python - <<'PY'
+read -r HOST PORT LANIP <<< "$(python - <<'PY'
 try:
     from app.settings import load_settings
-    print(load_settings()["server"]["port"])
+    s = load_settings()["server"]
+    host = s.get("host") or "0.0.0.0"
+    port = s.get("port", 8766)
 except Exception:
-    print(8766)
+    host, port = "0.0.0.0", 8766
+import socket
+ip = ""
+try:
+    sk = socket.socket(socket.AF_INET, socket.SOCK_DGRAM); sk.settimeout(0.4)
+    sk.connect(("8.8.8.8", 80)); ip = sk.getsockname()[0]; sk.close()
+except Exception:
+    pass
+print(host, port, ip if not ip.startswith("127.") else "")
 PY
-)
-echo -e "${GREEN}· 대시보드 주소: http://localhost:${PORT}${NC}"
+)"
+echo -e "${GREEN}· 맥북에서: http://localhost:${PORT}${NC}"
+if [ -n "${LANIP}" ]; then
+  echo -e "${GREEN}· 아이폰(같은 Wi-Fi)에서: http://${LANIP}:${PORT}${NC}"
+fi
+echo -e "· 우측 상단 [📱 폰에서 접속하기] 에서 QR 코드를 찍으면 바로 열립니다."
 echo -e "· 이 창을 닫으면 프로그램이 종료됩니다.\n"
 ( sleep 4; open "http://localhost:${PORT}" >/dev/null 2>&1 ) &
-python -m uvicorn app.main:app --host 127.0.0.1 --port "$PORT" || {
+python -m uvicorn app.main:app --host "$HOST" --port "$PORT" || {
   echo -e "${RED}서버 실행 실패${NC}"
   pause_exit 1
 }

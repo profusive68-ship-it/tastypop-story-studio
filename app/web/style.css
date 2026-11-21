@@ -103,3 +103,8 @@ details summary{cursor:pointer; color:var(--dim); font-size:13.5px}
 .split{display:grid; grid-template-columns:1.35fr .9fr; gap:14px}
 @media (max-width:960px){.split{grid-template-columns:1fr}}
 .sticky-actions{position:sticky; bottom:0; background:linear-gradient(180deg,rgba(15,17,21,0),var(--bg) 40%); padding:12px 0}
+
+/* 폰 접속 모달 */
+.modal{position:fixed;inset:0;background:rgba(0,0,0,.62);display:flex;align-items:center;justify-content:center;z-index:80;padding:18px}
+.modal-box{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:20px;width:min(96vw,760px);max-height:90vh;overflow:auto}
+.modal .copyrow{background:var(--panel2)}

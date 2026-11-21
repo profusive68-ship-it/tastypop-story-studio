@@ -115,8 +115,9 @@ DEFAULTS: dict = {
         "next_ep": None,
     },
     "server": {
-        "host": "127.0.0.1",
+        "host": "0.0.0.0",      # 같은 Wi-Fi 의 아이폰에서 접속 가능
         "port": 8766,
+        "pin": "",              # 비우면 잠금 없음(맥북 로컬은 항상 허용)
     },
     "ui": {
         "last_tab": "home",
