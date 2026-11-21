@@ -166,7 +166,8 @@ def prepare_media(project: dict, progress=None, log=None, generate_images: bool 
 
     if generate_videos and project.get("mode") == "auto":
         todo = [c for c in project["cuts"] if not (d / c["clip"]).exists()]
-        if todo and not (settings.key("kling_access_key") and settings.key("kling_secret_key")):
+        has_kling = bool(settings.key("kling_api_key") or (settings.key("kling_access_key") and settings.key("kling_secret_key")))
+        if todo and not has_kling:
             if log:
                 log("Kling 키가 없어 영상화는 건너뜁니다(키프레임 그대로 렌더).")
         else:

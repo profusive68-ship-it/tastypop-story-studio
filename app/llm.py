@@ -186,6 +186,6 @@ def provider_status() -> list[dict]:
          "use": "대본", "model": s["models"]["script_model_openai"]},
         {"name": "Claude", "key": "anthropic", "ok": bool(settings.key("anthropic")),
          "use": "대본", "model": s["models"]["script_model_anthropic"]},
-        {"name": "Kling", "key": "kling", "ok": bool(settings.key("kling_access_key") and settings.key("kling_secret_key")),
+        {"name": "Kling", "key": "kling", "ok": bool(settings.key("kling_api_key") or (settings.key("kling_access_key") and settings.key("kling_secret_key"))),
          "use": "영상화", "model": s["models"]["kling_model"]},
     ]

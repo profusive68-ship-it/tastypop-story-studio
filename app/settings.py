@@ -69,7 +69,7 @@ DEFAULTS: dict = {
         # 영상화(Kling) 모델
         "kling_model": "kling-v2-1",
         "kling_mode": "std",                       # std | pro
-        "kling_endpoint": "https://api.klingai.com/v1/videos/image2video",
+        "kling_endpoint": "https://api-singapore.klingai.com/v1/videos/image2video",
     },
     "render": {
         "width": 1080,
