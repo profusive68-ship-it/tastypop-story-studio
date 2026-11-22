@@ -57,7 +57,7 @@ DEFAULTS: dict = {
     "models": {
         # 대본(시나리오) 생성 모델
         "script_provider": "gemini",              # gemini | openai | anthropic
-        "script_model_gemini": "gemini-2.5-flash",
+        "script_model_gemini": "gemini-3.8-flash",
         "script_model_openai": "gpt-4.1",
         "script_model_anthropic": "claude-sonnet-4-5",
         # 이미지(키프레임) 생성 모델 우선순위 - 앞에서부터 시도

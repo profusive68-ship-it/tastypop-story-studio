@@ -40,13 +40,31 @@ def gemini_text(prompt: str, system: str = "", model: str | None = None) -> str:
     if not k:
         raise LLMError("Gemini API 키가 없습니다. [설정] 탭에서 입력해 주세요.")
     s = settings.load_settings()
-    model = model or s["models"]["script_model_gemini"]
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={k}"
+    primary = model or s["models"]["script_model_gemini"]
+    candidates = []
+    for m in (primary, "gemini-3.8-flash", "gemini-2.5-flash", "gemini-2.0-flash"):
+        if m and m not in candidates:
+            candidates.append(m)
+    if primary == "gemini-2.5-flash" and "gemini-3.8-flash" in candidates:
+        candidates = ["gemini-3.8-flash"] + [m for m in candidates if m != "gemini-3.8-flash"]
     payload: dict = {"contents": [{"role": "user", "parts": [{"text": prompt}]}],
                      "generationConfig": {"temperature": 0.9, "maxOutputTokens": 4096}}
     if system:
         payload["systemInstruction"] = {"parts": [{"text": system}]}
-    data = _post(url, headers={"Content-Type": "application/json"}, payload=payload)
+    last_err: Exception | None = None
+    data = None
+    for cand in candidates:
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{cand}:generateContent?key={k}"
+        try:
+            data = _post(url, headers={"Content-Type": "application/json"}, payload=payload)
+            break
+        except LLMError as e:
+            last_err = e
+            if "404" in str(e) or "NOT_FOUND" in str(e) or "no longer available" in str(e):
+                continue
+            raise
+    if data is None:
+        raise last_err or LLMError("Gemini 호출 실패")
     try:
         parts = data["candidates"][0]["content"]["parts"]
         return "".join(p.get("text", "") for p in parts).strip()
