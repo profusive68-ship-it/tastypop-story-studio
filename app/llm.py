@@ -7,6 +7,7 @@ from __future__ import annotations
 import base64
 import json
 import re
+import time
 from pathlib import Path
 
 import requests
@@ -42,7 +43,7 @@ def gemini_text(prompt: str, system: str = "", model: str | None = None) -> str:
     s = settings.load_settings()
     primary = model or s["models"]["script_model_gemini"]
     candidates = []
-    for m in (primary, "gemini-3.8-flash", "gemini-2.5-flash", "gemini-2.0-flash"):
+    for m in (primary, "gemini-3.8-flash", "gemini-2.5-flash-lite", "gemini-2.0-flash", "gemini-2.5-flash"):
         if m and m not in candidates:
             candidates.append(m)
     if primary == "gemini-2.5-flash" and "gemini-3.8-flash" in candidates:
@@ -55,14 +56,23 @@ def gemini_text(prompt: str, system: str = "", model: str | None = None) -> str:
     data = None
     for cand in candidates:
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{cand}:generateContent?key={k}"
-        try:
-            data = _post(url, headers={"Content-Type": "application/json"}, payload=payload)
+        for attempt in range(2):
+            try:
+                data = _post(url, headers={"Content-Type": "application/json"}, payload=payload)
+                break
+            except LLMError as e:
+                last_err = e
+                msg = str(e)
+                if any(t in msg for t in ("503", "429", "UNAVAILABLE", "overloaded", "RESOURCE_EXHAUSTED")):
+                    if attempt == 0:
+                        time.sleep(1.5)
+                        continue
+                    break
+                if any(t in msg for t in ("404", "NOT_FOUND", "no longer available")):
+                    break
+                raise
+        if data is not None:
             break
-        except LLMError as e:
-            last_err = e
-            if "404" in str(e) or "NOT_FOUND" in str(e) or "no longer available" in str(e):
-                continue
-            raise
     if data is None:
         raise last_err or LLMError("Gemini 호출 실패")
     try:
