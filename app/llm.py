@@ -58,7 +58,7 @@ def gemini_text(prompt: str, system: str = "", model: str | None = None) -> str:
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{cand}:generateContent?key={k}"
         for attempt in range(2):
             try:
-                data = _post(url, headers={"Content-Type": "application/json"}, payload=payload)
+                data = _post(url, headers={"Content-Type": "application/json"}, payload=payload, timeout=45)
                 break
             except LLMError as e:
                 last_err = e
