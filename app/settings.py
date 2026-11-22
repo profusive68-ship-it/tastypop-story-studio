@@ -197,7 +197,7 @@ def key(name: str) -> str:
         "kling_api_key": "KLING_API_KEY",
     }.get(name, name.upper())
     s = load_settings()
-    return (s["keys"].get(name) or os.environ.get(env) or "").strip()
+    return (s["keys"].get(name) or os.environ.get(env) or "").strip().lstrip("=").strip()
 
 
 def project_dir(ep_id: str) -> Path:
