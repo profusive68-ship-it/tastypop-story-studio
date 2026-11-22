@@ -43,11 +43,9 @@ def gemini_text(prompt: str, system: str = "", model: str | None = None) -> str:
     s = settings.load_settings()
     primary = model or s["models"]["script_model_gemini"]
     candidates = []
-    for m in (primary, "gemini-3.8-flash", "gemini-2.5-flash-lite", "gemini-2.0-flash", "gemini-2.5-flash"):
+    for m in ("gemini-2.5-flash", "gemini-2.0-flash", "gemini-2.5-flash-lite", primary, "gemini-3.8-flash"):
         if m and m not in candidates:
             candidates.append(m)
-    if primary == "gemini-2.5-flash" and "gemini-3.8-flash" in candidates:
-        candidates = ["gemini-3.8-flash"] + [m for m in candidates if m != "gemini-3.8-flash"]
     payload: dict = {"contents": [{"role": "user", "parts": [{"text": prompt}]}],
                      "generationConfig": {"temperature": 0.9, "maxOutputTokens": 4096}}
     if system:
@@ -56,23 +54,17 @@ def gemini_text(prompt: str, system: str = "", model: str | None = None) -> str:
     data = None
     for cand in candidates:
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{cand}:generateContent?key={k}"
-        for attempt in range(2):
-            try:
-                data = _post(url, headers={"Content-Type": "application/json"}, payload=payload, timeout=25)
-                break
-            except LLMError as e:
-                last_err = e
-                msg = str(e)
-                if any(t in msg for t in ("503", "429", "UNAVAILABLE", "overloaded", "RESOURCE_EXHAUSTED", "timed out", "Timeout", "네트워크 오류")):
-                    if attempt == 0:
-                        time.sleep(1.0)
-                        continue
-                    break
-                if any(t in msg for t in ("404", "NOT_FOUND", "no longer available")):
-                    break
-                raise
-        if data is not None:
+        try:
+            data = _post(url, headers={"Content-Type": "application/json"}, payload=payload, timeout=12)
             break
+        except LLMError as e:
+            last_err = e
+            msg = str(e)
+            if any(t in msg for t in ("503", "429", "404", "NOT_FOUND", "no longer available",
+                                      "UNAVAILABLE", "overloaded", "RESOURCE_EXHAUSTED",
+                                      "timed out", "Timeout", "네트워크 오류")):
+                continue
+            raise
     if data is None:
         raise last_err or LLMError("Gemini 호출 실패")
     try:
