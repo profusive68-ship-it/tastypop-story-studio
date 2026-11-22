@@ -919,13 +919,25 @@ def do_update() -> dict:
         raise HTTPException(500, f"업데이트 실패: {e}")
     ok = r.returncode == 0
     out_text = f"{r.stdout}\n{r.stderr}"
-    code_changed = ok and ("Already up to date" not in out_text and "Already up-to-date" not in out_text) and any(
-        k in out_text for k in ("app/", "VERSION", "requirements.txt")
+    disk_ver = ""
+    try:
+        disk_ver = (root / "VERSION").read_text(encoding="utf-8").strip()
+    except Exception:
+        pass
+    from . import __version__ as running_ver
+    ver_changed = bool(disk_ver and disk_ver != running_ver)
+    code_changed = ok and (
+        ver_changed
+        or (("Already up to date" not in out_text and "Already up-to-date" not in out_text)
+            and any(k in out_text for k in ("app/", "VERSION", "requirements.txt")))
     )
     inbox_list = planner.inbox_folders()
     if code_changed:
         import os, sys, threading
-        threading.Timer(0.6, lambda: os.execv(sys.executable, [sys.executable, *sys.argv])).start()
+        def _restart():
+            args = [sys.executable, "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8766"]
+            os.execv(sys.executable, args)
+        threading.Timer(0.6, _restart).start()
     return {"ok": ok, "restarting": code_changed,
             "stdout": r.stdout.strip(), "stderr": r.stderr.strip(),
             "inbox": inbox_list,
