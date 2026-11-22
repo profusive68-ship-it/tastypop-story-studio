@@ -820,12 +820,22 @@ $("#btnUpdate").onclick = async () => {
     const r = await api("/api/update", { method: "POST" });
     toast(r.message || (r.ok ? "업데이트 완료" : "업데이트 실패"));
     if (r.ok) {
+      if (r.restarting) {
+        setTimeout(async () => {
+          for (let i = 0; i < 12; i++) {
+            try { await fetch("/api/health"); location.reload(); return; } catch (_) {}
+            await new Promise(res => setTimeout(res, 500));
+          }
+          location.reload();
+        }, 1200);
+        return;
+      }
       await loadInbox();
       if ((r.inbox || []).length) {
         showTab("projects");
         toast(`새 이미지 묶음 ${r.inbox.length}개를 받았습니다 📥`);
       }
-      setTimeout(() => location.reload(), 1600);
+      setTimeout(() => location.reload(), 1200);
     }
   } catch (e) { toast(e.message); }
 };

@@ -833,11 +833,20 @@ def do_update() -> dict:
     except Exception as e:
         raise HTTPException(500, f"업데이트 실패: {e}")
     ok = r.returncode == 0
+    out_text = f"{r.stdout}\n{r.stderr}"
+    code_changed = ok and ("Already up to date" not in out_text and "Already up-to-date" not in out_text) and any(
+        k in out_text for k in ("app/", "VERSION", "requirements.txt")
+    )
     inbox_list = planner.inbox_folders()
-    return {"ok": ok, "stdout": r.stdout.strip(), "stderr": r.stderr.strip(),
+    if code_changed:
+        import os, sys, threading
+        threading.Timer(0.6, lambda: os.execv(sys.executable, [sys.executable, *sys.argv])).start()
+    return {"ok": ok, "restarting": code_changed,
+            "stdout": r.stdout.strip(), "stderr": r.stderr.strip(),
             "inbox": inbox_list,
-            "message": (f"업데이트 완료 · 새 이미지 묶음 {len(inbox_list)}개" if ok and inbox_list
-                        else ("업데이트 완료(새 이미지 없음)" if ok else "업데이트 실패(충돌 또는 네트워크)."))}
+            "message": ("새 코드 반영 중… 2~3초 뒤 자동 새로고침됩니다!" if code_changed
+                        else (f"업데이트 완료 · 새 이미지 묶음 {len(inbox_list)}개" if ok and inbox_list
+                              else ("업데이트 완료(새 이미지 없음)" if ok else "업데이트 실패(충돌 또는 네트워크).")))}
 
 
 @app.get("/api/projects/{pid}/evidence")
