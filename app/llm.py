@@ -58,14 +58,14 @@ def gemini_text(prompt: str, system: str = "", model: str | None = None) -> str:
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{cand}:generateContent?key={k}"
         for attempt in range(2):
             try:
-                data = _post(url, headers={"Content-Type": "application/json"}, payload=payload, timeout=45)
+                data = _post(url, headers={"Content-Type": "application/json"}, payload=payload, timeout=25)
                 break
             except LLMError as e:
                 last_err = e
                 msg = str(e)
-                if any(t in msg for t in ("503", "429", "UNAVAILABLE", "overloaded", "RESOURCE_EXHAUSTED")):
+                if any(t in msg for t in ("503", "429", "UNAVAILABLE", "overloaded", "RESOURCE_EXHAUSTED", "timed out", "Timeout", "네트워크 오류")):
                     if attempt == 0:
-                        time.sleep(1.5)
+                        time.sleep(1.0)
                         continue
                     break
                 if any(t in msg for t in ("404", "NOT_FOUND", "no longer available")):
