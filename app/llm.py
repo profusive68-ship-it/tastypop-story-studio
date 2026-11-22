@@ -43,7 +43,7 @@ def gemini_text(prompt: str, system: str = "", model: str | None = None) -> str:
     s = settings.load_settings()
     primary = model or s["models"]["script_model_gemini"]
     candidates = []
-    for m in ("gemini-2.5-flash", "gemini-2.0-flash", "gemini-2.5-flash-lite", primary, "gemini-3.8-flash"):
+    for m in ("gemini-3.8-flash", primary, "gemini-2.5-flash", "gemini-2.5-flash-lite"):
         if m and m not in candidates:
             candidates.append(m)
     payload: dict = {"contents": [{"role": "user", "parts": [{"text": prompt}]}],
@@ -55,7 +55,7 @@ def gemini_text(prompt: str, system: str = "", model: str | None = None) -> str:
     for cand in candidates:
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{cand}:generateContent?key={k}"
         try:
-            data = _post(url, headers={"Content-Type": "application/json"}, payload=payload, timeout=12)
+            data = _post(url, headers={"Content-Type": "application/json"}, payload=payload, timeout=60)
             break
         except LLMError as e:
             last_err = e
