@@ -236,7 +236,7 @@ async function openProject(pid) {
     if (STATE.mediaTimer) clearInterval(STATE.mediaTimer);
     if (STATE.kevinTimer) clearInterval(STATE.kevinTimer);
     STATE.mediaTimer = setInterval(() => { if (STATE.project === pid) checkMedia(true); }, 5000);
-    STATE.kevinTimer = setInterval(() => { if (STATE.project === pid) loadKevinTimeline(); }, 20000);
+    STATE.kevinTimer = setInterval(() => { if (STATE.project === pid) loadKevinTimeline(); }, 10000);
     fillProjectSelects();
   } catch (e) { toast(e.message); }
 }
@@ -506,8 +506,10 @@ async function sendGithubRequest(kind, instruction, btn, resultBox, idleLabel, b
       ${r.url ? `<div class="body"><a href="${esc(r.url)}" target="_blank">${esc(r.url)}</a></div>` : ""}
       <div class="row" style="margin-top:8px">
         <button class="btn small" onclick='copyText(${JSON.stringify(r.copy_text || r.body || "")})'>요청서 복사</button>
-        ${r.url ? `<a class="btn small" href="${esc(r.url)}" target="_blank">깃하브에서 열기</a>` : ""}
+        ${r.url ? `<a class="btn small" href="${esc(r.url)}" target="_blank">깃허브에서 열기</a>` : ""}
       </div>`;
+    loadKevinTimeline();
+    setTimeout(() => { if (STATE.project) loadKevinTimeline(); }, 4000);
     toast(r.mode === "api" ? "요청을 보냈습니다 — 케빈이 확인합니다" : "작성 화면에서 [Submit new issue] 만 누르면 됩니다");
   } catch (e) { toast(e.message); }
   finally { btn.disabled = false; btn.textContent = idleLabel; }
