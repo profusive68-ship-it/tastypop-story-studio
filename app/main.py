@@ -290,13 +290,20 @@ def produce(pid: str, body: dict = Body(default={})) -> dict:
 @app.post("/api/projects/{pid}/script")
 def make_script(pid: str, body: dict = Body(default={})) -> dict:
     p = _proj(pid)
+    jobs.set_progress(pid, 25, "AI 대본 요청 중…")
+    jobs.log_line(pid, "🧠 1/3 · AI 대본 요청 전송 중…")
     try:
         text = llm.generate_text(planner.script_prompt(p, body.get("extra", "")), planner.SCRIPT_SYSTEM)
+        jobs.set_progress(pid, 70, "대본 해석 중…")
+        jobs.log_line(pid, "✍️ 2/3 · 응답 해석 및 컷 타임라인 반영 중…")
         script = llm.extract_json(text)
     except llm.LLMError as e:
+        jobs.set_progress(pid, 0, "대본 오류")
+        jobs.log_line(pid, f"❌ AI 대본 오류: {e}")
         raise HTTPException(400, str(e))
     planner.apply_script(p, script)
-    jobs.log_line(pid, "AI 대본 생성·반영 완료")
+    jobs.set_progress(pid, 100, "AI 대본 완료")
+    jobs.log_line(pid, "✅ 3/3 · AI 대본 생성·반영 완료!")
     return {"ok": True, "script": script, "project": planner.load_project(pid)}
 
 

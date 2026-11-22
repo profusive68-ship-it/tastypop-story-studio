@@ -397,9 +397,30 @@ $("#pdImages").onclick = async () => {
 };
 $("#pdScript").onclick = async () => {
   if (!STATE.project) return;
+  const btn = $("#pdScript");
+  const orig = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = "⏳ 대본 생성 중…";
+  const bar = $("#pdBar"), pct = $("#pdPct"), step = $("#pdStep"), log = $("#pdLog");
+  if (bar) bar.style.width = "25%";
+  if (pct) pct.textContent = "25%";
+  if (step) step.textContent = "AI 대본 요청 중…";
+  if (log) { log.textContent += (log.textContent ? "\n" : "") + "[진행] 🧠 1/3 · AI 대본 요청 전송 중…"; log.scrollTop = log.scrollHeight; }
   toast("AI 대본 생성 중…");
-  try { await api(`/api/projects/${STATE.project}/script`, { method: "POST", body: {} }); toast("대본 반영 완료"); openProject(STATE.project); }
-  catch (e) { toast(e.message); }
+  try {
+    await api(`/api/projects/${STATE.project}/script`, { method: "POST", body: {} });
+    toast("대본 반영 완료");
+    openProject(STATE.project);
+  } catch (e) {
+    if (bar) bar.style.width = "0%";
+    if (pct) pct.textContent = "0%";
+    if (step) step.textContent = "대본 오류";
+    if (log) { log.textContent += `\n[오류] ❌ ${e.message}`; log.scrollTop = log.scrollHeight; }
+    toast(e.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = orig;
+  }
 };
 $("#pdFolder").onclick = async () => { if (STATE.project) await api(`/api/open/${STATE.project}`, { method: "GET" }); };
 
