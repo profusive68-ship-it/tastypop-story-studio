@@ -115,6 +115,9 @@ def anthropic_text(prompt: str, system: str = "", model: str | None = None) -> s
 def generate_text(prompt: str, system: str = "", provider: str | None = None) -> str:
     s = settings.load_settings()
     provider = provider or s["models"].get("script_provider", "gemini")
+    # 선택한 제공자 키가 비어 있고 Gemini 키가 있으면 자동으로 Gemini 사용
+    if provider != "gemini" and not settings.key(provider) and settings.key("gemini"):
+        provider = "gemini"
     fn = {"gemini": gemini_text, "openai": openai_text, "anthropic": anthropic_text}.get(provider)
     if not fn:
         raise LLMError(f"알 수 없는 대본 제공자: {provider}")
