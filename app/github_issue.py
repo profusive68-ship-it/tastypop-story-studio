@@ -496,3 +496,63 @@ def status() -> dict:
         "new_issue_url": f"{WEB_ROOT}/{repo()}/issues/new",
         "notes": cfg.get("notes", ""),
     }
+
+
+def timeline(pid: str) -> dict:
+    """프로젝트와 연결된 GitHub 이슈 + 케빈 진행 댓글을 시간순 타임라인으로 돌려준다."""
+    rp = repo()
+    headers = {"Accept": "application/vnd.github+json", "User-Agent": "TastyPop-Studio"}
+    tok = token()
+    if tok:
+        headers["Authorization"] = f"Bearer {tok}"
+    try:
+        r = requests.get(f"{API_ROOT}/repos/{rp}/issues",
+                         params={"state": "all", "per_page": 20, "sort": "updated", "direction": "desc"},
+                         headers=headers, timeout=10)
+    except requests.RequestException as e:
+        return {"ok": False, "events": [], "issues": [], "error": f"네트워크 오류: {e}"}
+    if r.status_code >= 400:
+        return {"ok": False, "events": [], "issues": [], "error": f"GitHub 조회 {r.status_code}"}
+    matched = [it for it in (r.json() or [])
+               if not it.get("pull_request") and (pid in (it.get("title") or "") or pid in (it.get("body") or ""))]
+    events = []
+    issues = []
+    for it in matched[:5]:
+        num = it.get("number")
+        issues.append({"number": num, "title": it.get("title"), "state": it.get("state"),
+                       "url": it.get("html_url"), "created_at": it.get("created_at")})
+        events.append({
+            "at": it.get("created_at") or "",
+            "issue": num,
+            "kind": "open",
+            "state": it.get("state"),
+            "url": it.get("html_url"),
+            "text": f"📤 요청 등록 (#{num}): {it.get('title')}",
+        })
+        if int(it.get("comments") or 0) > 0:
+            try:
+                cr = requests.get(f"{API_ROOT}/repos/{rp}/issues/{num}/comments",
+                                  headers=headers, timeout=8)
+                if cr.status_code == 200:
+                    for c in (cr.json() or []):
+                        events.append({
+                            "at": c.get("created_at") or "",
+                            "issue": num,
+                            "kind": "comment",
+                            "state": it.get("state"),
+                            "url": c.get("html_url") or it.get("html_url"),
+                            "text": (c.get("body") or "").strip(),
+                        })
+            except requests.RequestException:
+                pass
+        if it.get("state") == "closed" and it.get("closed_at"):
+            events.append({
+                "at": it.get("closed_at") or "",
+                "issue": num,
+                "kind": "close",
+                "state": "closed",
+                "url": it.get("html_url"),
+                "text": f"🏁 이슈 #{num} 처리 완료 (종료)",
+            })
+    events.sort(key=lambda e: e.get("at") or "")
+    return {"ok": True, "issues": issues, "events": events}

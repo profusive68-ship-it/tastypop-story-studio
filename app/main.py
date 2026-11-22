@@ -481,6 +481,12 @@ def github_status() -> dict:
     return github_issue.status()
 
 
+@app.get("/api/projects/{pid}/kevin-timeline")
+def project_kevin_timeline(pid: str) -> dict:
+    _proj(pid)
+    return github_issue.timeline(pid)
+
+
 @app.post("/api/projects/{pid}/github-issue")
 def create_github_issue(pid: str, body: dict = Body(default={})) -> dict:
     """케빈 요청 이슈 생성 — 토큰이 있으면 이슈 생성, 없으면 1클릭 제출 URL.

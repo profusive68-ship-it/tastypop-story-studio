@@ -232,8 +232,11 @@ async function openProject(pid) {
     if (revs) $("#reviseNote").innerHTML = `<b>최근 수정</b><br>${revs}`;
     pollProject(pid);
     checkMedia(true);
+    loadKevinTimeline();
     if (STATE.mediaTimer) clearInterval(STATE.mediaTimer);
+    if (STATE.kevinTimer) clearInterval(STATE.kevinTimer);
     STATE.mediaTimer = setInterval(() => { if (STATE.project === pid) checkMedia(true); }, 5000);
+    STATE.kevinTimer = setInterval(() => { if (STATE.project === pid) loadKevinTimeline(); }, 20000);
     fillProjectSelects();
   } catch (e) { toast(e.message); }
 }
@@ -342,6 +345,34 @@ async function checkMedia(auto = true) {
     if (m.queued) startPolling(STATE.project);
   } catch (e) { }
 }
+
+function _fmtKst(iso) {
+  if (!iso) return "";
+  try {
+    const d = new Date(iso);
+    const pad = n => String(n).padStart(2, "0");
+    return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+  } catch (_) { return iso.slice(11, 19); }
+}
+
+async function loadKevinTimeline() {
+  const box = $("#pdKevinTimeline");
+  if (!box || !STATE.project) return;
+  try {
+    const r = await api(`/api/projects/${STATE.project}/kevin-timeline`);
+    if (!r.ok) { box.textContent = r.error || "타임라인을 불러오지 못했습니다."; return; }
+    if (!(r.events || []).length) {
+      box.textContent = "이 프로젝트에 등록된 깃허브 요청이 아직 없습니다. ([📤 케빈에게 이미지 요청하기] 또는 [🎬 영상 제작 요청]을 누르면 진행 단계가 여기에 실시간으로 쌓입니다.)";
+      return;
+    }
+    box.textContent = r.events.map(ev => `[${_fmtKst(ev.at)}] ${ev.text}`).join("\n");
+    box.scrollTop = box.scrollHeight;
+  } catch (e) {
+    box.textContent = `조회 오류: ${e.message}`;
+  }
+}
+
+if ($("#btnKevinTimeline")) $("#btnKevinTimeline").onclick = async () => { await loadKevinTimeline(); toast("케빈 타임라인 새로고침 완료"); };
 
 let _kfGallerySig = "";
 
