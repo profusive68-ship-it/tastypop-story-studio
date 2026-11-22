@@ -440,6 +440,7 @@ def media_status(project: dict) -> dict:
                 pass
         rows.append({"id": c["id"], "found": p is not None, "kind": kind,
                      "file": p.name if p else "", "dur": c["dur"],
+                     "scene": c.get("scene") or "", "ko_line": c.get("ko_line") or "", "sfx": c.get("sfx") or "",
                      "mtime": mtime, "mtime_ns": mtime_ns, "size": size,
                      "url": f"/api/projects/{project['id']}/kf/{c['id']}?v={mtime}" if p is not None else ""})
     found = sum(1 for r in rows if r["found"])

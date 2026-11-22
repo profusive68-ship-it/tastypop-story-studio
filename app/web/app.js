@@ -343,32 +343,101 @@ async function checkMedia(auto = true) {
   } catch (e) { }
 }
 
+let _kfGallerySig = "";
+
 function renderKfGallery(m) {
   const box = $("#pdKfGallery");
   if (!box) return;
-  if (!m || !m.cuts) { box.innerHTML = ""; return; }
-  box.innerHTML = m.cuts.map(r => {
+  if (!m || !m.cuts) {
+    if (_kfGallerySig !== "") { box.innerHTML = ""; _kfGallerySig = ""; }
+    return;
+  }
+  const pid = m.project_id || STATE.project || "";
+  const sig = pid + "::" + m.cuts.map(r => `${r.id}:${r.found}:${r.kind}:${r.mtime}:${r.scene || ""}`).join("|");
+  if (sig === _kfGallerySig) return;
+  _kfGallerySig = sig;
+  box.innerHTML = m.cuts.map((r, idx) => {
     const num = String(r.id).padStart(2, "0");
-    const pid = m.project_id || STATE.project;
     const url = r.url || (pid ? `/api/projects/${pid}/kf/${r.id}?v=${r.mtime || 0}` : "");
     const kindTag = r.kind === "clip" ? `<span class="kind clip">🎬 클립</span>`
                                        : (r.kind === "image" ? `<span class="kind">🖼️ 이미지</span>` : "");
+    const sceneTxt = r.scene ? esc(r.scene) : "시나리오 설명 없음";
     return `<div class="kfcard ${r.found ? "" : "missing"}">
       ${r.found
-        ? `<img src="${esc(url)}" alt="C${num}" loading="lazy" onclick="openKf(${JSON.stringify(url)})" onerror="this.style.visibility='hidden'">`
-        : `<div class="nope">아직 없음</div>`}
+        ? `<img src="${esc(url)}" alt="C${num}" loading="lazy" onclick="openKf(${idx})" onerror="this.style.visibility='hidden'">`
+        : `<div class="nope" onclick="openKf(${idx})">아직 없음</div>`}
       ${r.found ? kindTag : ""}
       <div class="cap">
         <b title="누르면 수정 지시에 이 컷 번호가 들어갑니다" onclick="pickCut(${r.id})">C${num}</b>
         <span>${r.dur}초</span>
       </div>
+      <div class="scene" title="${sceneTxt}" onclick="openKf(${idx})">${sceneTxt}</div>
     </div>`;
   }).join("");
 }
 
-function openKf(url) {
-  if (!url) return;
-  window.open(url, "_blank", "noopener");
+let _lbIdx = 0;
+function _ensureLightbox() {
+  let lb = $("#kfLightbox");
+  if (lb) return lb;
+  lb = document.createElement("div");
+  lb.id = "kfLightbox";
+  lb.className = "kflightbox";
+  lb.innerHTML = `<div class="inner" onclick="event.stopPropagation()">
+    <div class="meta">
+      <b id="lbTitle">C01</b>
+      <div class="row" style="gap:6px">
+        <button class="btn small" id="lbPrev">⬅️ 이전</button>
+        <button class="btn small" id="lbNext">➡️ 다음</button>
+        <button class="btn small" id="lbPick">✏️ 이 컷 수정</button>
+        <button class="btn small" id="lbClose">✕ 닫기</button>
+      </div>
+    </div>
+    <img id="lbImg" alt="">
+    <div class="desc" id="lbDesc"></div>
+  </div>`;
+  lb.onclick = () => lb.classList.remove("open");
+  document.body.appendChild(lb);
+  $("#lbClose").onclick = () => lb.classList.remove("open");
+  $("#lbPrev").onclick = () => openKf(_lbIdx - 1);
+  $("#lbNext").onclick = () => openKf(_lbIdx + 1);
+  $("#lbPick").onclick = () => {
+    const cuts = (STATE.media && STATE.media.cuts) || [];
+    const r = cuts[_lbIdx];
+    lb.classList.remove("open");
+    if (r) pickCut(r.id);
+  };
+  document.addEventListener("keydown", (e) => {
+    if (!lb.classList.contains("open")) return;
+    if (e.key === "Escape") lb.classList.remove("open");
+    else if (e.key === "ArrowLeft") openKf(_lbIdx - 1);
+    else if (e.key === "ArrowRight") openKf(_lbIdx + 1);
+  });
+  return lb;
+}
+
+function openKf(idxOrUrl) {
+  const cuts = (STATE.media && STATE.media.cuts) || [];
+  if (!cuts.length) return;
+  let idx = typeof idxOrUrl === "number" ? idxOrUrl : 0;
+  if (idx < 0) idx = cuts.length - 1;
+  if (idx >= cuts.length) idx = 0;
+  _lbIdx = idx;
+  const r = cuts[idx];
+  const pid = (STATE.media && STATE.media.project_id) || STATE.project || "";
+  const url = r.url || (pid ? `/api/projects/${pid}/kf/${r.id}?v=${r.mtime || 0}` : "");
+  const lb = _ensureLightbox();
+  const num = String(r.id).padStart(2, "0");
+  $("#lbTitle").textContent = `C${num} · ${r.dur}초 · ${r.kind === "clip" ? "🎬 클립" : (r.found ? "🖼️ 이미지" : "⬜ 미생성")}`;
+  const img = $("#lbImg");
+  if (r.found && url) { img.src = url; img.style.display = "block"; }
+  else { img.style.display = "none"; }
+  const parts = [];
+  if (r.scene) parts.push(`<b>시나리오:</b> ${esc(r.scene)}`);
+  if (r.ko_line) parts.push(`<b>대사:</b> ${esc(r.ko_line)}`);
+  if (r.sfx) parts.push(`<b>효과음:</b> ${esc(r.sfx)}`);
+  $("#lbDesc").innerHTML = parts.length ? parts.join("<br>") : "시나리오 설명이 없습니다.";
+  lb.classList.add("open");
 }
 
 function pickCut(id) {
