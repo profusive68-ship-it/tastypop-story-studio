@@ -21,6 +21,8 @@ from datetime import datetime
 from pathlib import Path
 from urllib.parse import quote
 
+import requests
+
 from . import planner, settings
 
 API_ROOT = "https://api.github.com"
