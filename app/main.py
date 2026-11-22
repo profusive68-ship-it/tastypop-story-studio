@@ -338,17 +338,84 @@ def media(pid: str, auto: bool = True) -> dict:
     """kf/ · clips/ 폴더를 자동 감지해 초록불 상태를 돌려준다.
 
     모든 컷이 준비되면(초록불) 자동으로 다음 단계(영상 조립)를 큐에 넣는다.
+    이미 영상이 있어도 미디어가 바뀌었으면(클립 도착·이미지 교체) 재조립을 자동으로 큐에 넣는다.
     """
     p = _proj(pid)
     st = planner.media_status(p)
     queued = False
-    video = planner.project_dir(pid) / "out" / "final.mp4"
-    if auto and st["ready"] and not video.exists() and not jobs.is_busy(pid):
+    video = planner.final_video(pid)
+    if auto and planner.render_needs_update(p) and not jobs.is_busy(pid):
         jobs.run_render(pid)
-        jobs.log_line(pid, f"이미지 {st['found']}/{st['total']} 감지 → 영상 조립 자동 시작")
+        if video.exists():
+            jobs.log_line(pid, "클립/이미지 변경 감지 → 움직이는 버전으로 다시 조립 시작 (final.mp4 덮어씁니다)")
+        else:
+            jobs.log_line(pid, f"이미지 {st['found']}/{st['total']} 감지 → 영상 조립 자동 시작")
         queued = True
     st["queued"] = queued
     st["has_video"] = video.exists()
+    st["needs_render"] = planner.render_needs_update(p)
+    st["rendered_clips"] = int(((p.get("render") or {}).get("clips") or 0))
+    return st
+
+
+@app.get("/api/projects/{pid}/kf/{cut_id}")
+def kf_image(pid: str, cut_id: int):
+    """컷별 키프레임 미리보기(썸네일). clips/ 만 있고 kf/ 가 없으면 클립의 첫 프레임을 준다.
+
+    캐시 방지: 파일이 바뀌면 ?v=수정시각 쿼리가 바뀌므로 브라우저가 새로 받아온다. (v 값은 무시)
+    """
+    p = _proj(pid)
+    cut = next((c for c in p["cuts"] if int(c["id"]) == int(cut_id)), None)
+    if not cut:
+        raise HTTPException(404, "그런 컷이 없습니다.")
+    d = planner.project_dir(pid)
+    for n in planner.kf_names(int(cut["id"])):
+        f = d / "kf" / n
+        if f.exists() and f.suffix.lower() in (".png", ".jpg", ".jpeg", ".webp"):
+            return _image_response(f)
+    for n in planner.clip_names(int(cut["id"])):
+        f = d / "clips" / n
+        if f.exists() and f.stat().st_size > 1000:
+            frame = d / "work" / "previews" / f"c{int(cut['id']):02d}.jpg"
+            try:
+                _clip_frame(f, frame)
+                if frame.exists():
+                    return _image_response(frame)
+            except Exception:
+                pass
+            break
+    raise HTTPException(404, "이 컷의 이미지가 아직 없습니다.")
+
+
+def _image_response(f: Path) -> FileResponse:
+    st = f.stat()
+    return FileResponse(
+        str(f),
+        headers={
+            "Cache-Control": "no-cache, max-age=0",
+            "ETag": f'"{int(st.st_mtime)}-{st.st_size}"',
+            "Last-Modified": datetime.fromtimestamp(st.st_mtime).strftime("%a, %d %b %Y %H:%M:%S GMT"),
+        },
+    )
+
+
+def _clip_frame(clip: Path, out: Path) -> None:
+    """클립 첫 프레임 추출(미리보기용). ffmpeg 없으면 예외."""
+    out.parent.mkdir(parents=True, exist_ok=True)
+    if out.exists() and out.stat().st_mtime >= clip.stat().st_mtime:
+        return
+    ffmpeg_tools.run([ffmpeg_tools.ffmpeg(), "-hide_banner", "-loglevel", "error", "-y",
+                      "-ss", "0.1", "-i", str(clip), "-frames:v", "1", "-vf", "scale=540:-2", str(out)],
+                     timeout=60)
+
+
+@app.get("/api/projects/{pid}/kf")
+def kf_gallery(pid: str) -> dict:
+    """컷별 미리보기 갤러리 목록(이미지·클립 유무 + 캐시방지 URL)."""
+    p = _proj(pid)
+    st = planner.media_status(p)
+    st["project_id"] = pid
+    st["topic"] = p.get("topic", "")
     return st
 
 
@@ -369,11 +436,15 @@ def import_images(pid: str, body: dict = Body(default={})) -> dict:
         res = planner.import_images(pid, src, overwrite=bool(body.get("overwrite")))
     except Exception as e:
         raise HTTPException(400, str(e))
-    jobs.log_line(pid, f"이미지 가져오기: {len(res['copied'])}개 ({src.name})")
-    st = planner.media_status(p)
-    if st["ready"] and not (planner.project_dir(pid) / "out" / "final.mp4").exists() and not jobs.is_busy(pid):
+    p = planner.load_project(pid)
+    jobs.log_line(pid, f"파일 가져오기: 이미지 {len(res['copied'])}장"
+                        + (f", 클립 {len(res.get('copied_clips', []))}개" if res.get("copied_clips") else "")
+                        + f" ({src.name})")
+    st = res["media"]
+    if res.get("needs_render") and not jobs.is_busy(pid):
+        had_video = planner.final_video(pid).exists()
         jobs.run_render(pid)
-        jobs.log_line(pid, "이미지 준비 완료 → 영상 조립 자동 시작")
+        jobs.log_line(pid, "미디어 변경 감지 → 영상 재조립 자동 시작" if had_video else "이미지 준비 완료 → 영상 조립 자동 시작")
         res["queued"] = True
     res["media"] = st
     return {"ok": True, **res}
@@ -412,15 +483,23 @@ def github_status() -> dict:
 
 @app.post("/api/projects/{pid}/github-issue")
 def create_github_issue(pid: str, body: dict = Body(default={})) -> dict:
-    """[📤 케빈에게 이미지 요청하기] — 토큰이 있으면 이슈 생성, 없으면 1클릭 제출 URL."""
+    """케빈 요청 이슈 생성 — 토큰이 있으면 이슈 생성, 없으면 1클릭 제출 URL.
+
+    body: {kind: image_request|image_revision|video_request, instruction|note: "수정 지시"}
+    """
     p = _proj(pid)
-    note = (body.get("note") or "").strip()
+    kind = github_issue.kind_of(body.get("kind"))
+    note = (body.get("instruction") or body.get("note") or "").strip()
+    if kind == "image_revision" and not note:
+        raise HTTPException(400, "수정 지시를 입력해 주세요. 예: '3번 컷 감자 표정 더 놀라게, 9번 태극기 더 크게'")
     try:
-        res = github_issue.create(p, note=note)
+        res = github_issue.create(p, note=note, kind=kind)
     except Exception as e:
-        raise HTTPException(400, f"이미지 요청 생성 실패: {e}")
-    jobs.log_line(pid, f"깃허브 이미지 요청({'이슈 생성' if res.get('mode') == 'api' else '작성 화면 열기'})"
-                        f" · target_inbox: {res.get('target_inbox')}")
+        raise HTTPException(400, f"요청 생성 실패: {e}")
+    how = "이슈 생성" if res.get("mode") == "api" else "작성 화면 열기"
+    label_txt = {"image_request": "이미지", "image_revision": "이미지 수정", "video_request": "영상 제작"}[kind]
+    jobs.log_line(pid, f"깃허브 {label_txt} 요청({how}) · target_inbox: {res.get('target_inbox')}"
+                        + (f" · 지시: {note[:80]}" if note else ""))
     return res
 
 

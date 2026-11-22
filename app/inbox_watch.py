@@ -148,17 +148,49 @@ def _ep_number(name: str) -> int | None:
 
 
 def _needs_images(pid: str) -> bool:
+    """아직 이미지(또는 클립)를 기다리는 프로젝트인지.
+
+    예전에는 final.mp4 가 있으면 무조건 False 였지만, 이제는
+    영상이 있어도 나중에 도착한 클립·교체된 이미지가 아직 반영되지 않았으면 True 다.
+    """
+    return _wants_assets(pid)
+
+
+def _wants_assets(pid: str, incoming_clips: bool = False) -> bool:
+    """이 프로젝트가 새 파일을 받아야 하는지(미완성 또는 재조립 대기).
+
+    incoming_clips=True 는 "지금 들어오려는 묶음에 클립이 있다"는 뜻 —
+    이미 완성된 프로젝트라도 새 클립을 받아 다시 조립해야 하므로 True.
+    """
     try:
         p = planner.load_project(pid)
     except Exception:
         return False
-    if (planner.project_dir(pid) / "out" / "final.mp4").exists():
+    st = planner.media_status(p)
+    if incoming_clips and st["found"] > 0:
+        return True
+    if not st["ready"]:
+        return True
+    if planner.render_needs_update(p):
+        return True
+    return False
+
+
+def retry_pending_render(pid: str) -> bool:
+    """같은 묶음을 이미 처리했어도 재조립이 남아 있으면 다시 처리하게 한다(렌더 실패 복구)."""
+    try:
+        p = planner.load_project(pid)
+    except Exception:
         return False
-    return not planner.media_status(p)["ready"]
+    return planner.render_needs_update(p) and not jobs.is_busy(pid)
 
 
-def match_project(folder_name: str, projects: list[dict] | None = None) -> tuple[str | None, str]:
-    """폴더명 → 프로젝트 ID. (pid, 매칭 이유) 를 돌려준다."""
+def match_project(folder_name: str, projects: list[dict] | None = None,
+                  has_clips: bool = False) -> tuple[str | None, str]:
+    """폴더명 → 프로젝트 ID. (pid, 매칭 이유) 를 돌려준다.
+
+    has_clips: 묶음에 .mp4 가 들어 있으면, 영상이 이미 완성된 프로젝트도 후보로 본다.
+    """
     projects = projects if projects is not None else planner.list_projects()
     if not projects:
         return None, "프로젝트가 없습니다"
@@ -178,15 +210,16 @@ def match_project(folder_name: str, projects: list[dict] | None = None) -> tuple
     if ep is not None:
         same = [p for p in projects if int(p.get("ep") or -1) == ep]
         if same:
-            waiting = [p for p in same if _needs_images(p["id"])] or same
+            waiting = [p for p in same if _wants_assets(p["id"], incoming_clips=has_clips)] or same
             waiting.sort(key=lambda p: p.get("created_at") or "", reverse=True)
             return waiting[0]["id"], f"Ep.{ep} 번호 일치"
 
     active = (settings.load_settings().get("ui") or {}).get("active_project") or ""  # 4) 지금 열어 둔 프로젝트
-    if active and any(p["id"] == active for p in projects) and _needs_images(active):
+    if active and any(p["id"] == active for p in projects) and _wants_assets(active, incoming_clips=has_clips):
         return active, "지금 열어 둔 프로젝트"
 
-    waiting = [p for p in projects if _needs_images(p["id"])]                        # 5) 대기중 프로젝트가 하나뿐
+    waiting = [p for p in projects                                       # 5) 대기중 프로젝트가 하나뿐
+               if _wants_assets(p["id"], incoming_clips=has_clips)]
     if len(waiting) == 1:
         return waiting[0]["id"], "대기중인 프로젝트가 하나뿐"
     return None, "매칭되는 프로젝트를 찾지 못했습니다"
@@ -266,7 +299,9 @@ def receive_folder(folder: Path, pid: str, overwrite: bool | None = None) -> dic
     n_cuts = len(project["cuts"])
     added, replaced, skipped, outside = [], [], [], []
 
-    def _copy_group(files: list[Path], dest_fn) -> None:
+    def _copy_group(files: list[Path], dest_fn) -> tuple[list[str], list[str]]:
+        a: list[str] = []
+        r: list[str] = []
         parsed = []
         for p in files:
             m = re.search(r"(\d+)", p.stem)
@@ -285,15 +320,21 @@ def receive_folder(folder: Path, pid: str, overwrite: bool | None = None) -> dic
                     continue
                 shutil.copy2(src, dst)
                 replaced.append(f"{src.name}→{dst.name}")
+                r.append(f"{src.name}→{dst.name}")
                 continue
             shutil.copy2(src, dst)
             added.append(f"{src.name}→{dst.name}")
+            a.append(f"{src.name}→{dst.name}")
+        return a, r
 
+    added_clips, replaced_clips = _copy_group(_clips(folder), _dest_for_clip)
     _copy_group(_images(folder), _dest_for)
-    _copy_group(_clips(folder), _dest_for_clip)
-    st = planner.media_status(planner.load_project(pid))
+    project = planner.load_project(pid)
+    st = planner.media_status(project)
     return {"project_id": pid, "folder": folder.name, "added": added, "replaced": replaced,
-            "skipped": skipped, "outside_cuts": outside, "media": st}
+            "added_clips": added_clips, "replaced_clips": replaced_clips,
+            "skipped": skipped, "outside_cuts": outside, "media": st,
+            "needs_render": planner.render_needs_update(project)}
 
 
 # ------------------------------------------------------------------ 한 차례 수신
@@ -323,11 +364,25 @@ def receive_once(root: Path | None = None, do_pull: bool = True, do_render: bool
     projects = planner.list_projects()
     for folder in folders:
         files = _images(folder) + _clips(folder)
+        has_clips = bool(_clips(folder))
         sig = _folder_signature(files)
         rec = state["folders"].get(folder.name) or {}
         if rec.get("sig") == sig and rec.get("target"):
+            # 이미 처리한 묶음. 다만 지난번에 재조립 요청이 밀렸으면(렌더 실패·작업 중) 다시 큐잉만 한다.
+            pid0 = rec.get("target")
+            if rec.get("pending_render") and do_render and not jobs.is_busy(pid0) and retry_pending_render(pid0):
+                try:
+                    jobs.run_render(pid0)
+                    jobs.log_line(pid0, "🎬 미디어 변경분 재조립 재시도")
+                    log(f"{pid0}: 재조립 재시도")
+                    summary["rendered"].append(pid0)
+                    rec["pending_render"] = False
+                    state["folders"][folder.name] = rec
+                    save_state(state)
+                except Exception as e:
+                    log(f"{pid0}: 재조립 재시도 실패 — {e}")
             continue                                     # 이미 처리한 묶음
-        pid, why = match_project(folder.name, projects)
+        pid, why = match_project(folder.name, projects, has_clips=has_clips)
         if not pid:
             if rec.get("sig") != sig:
                 log(f"'{folder.name}' — {why}. (폴더명을 projects/{'{ep_id}'} 와 맞추거나 프로젝트를 열어 두세요)")
@@ -351,37 +406,58 @@ def receive_once(root: Path | None = None, do_pull: bool = True, do_render: bool
             summary["ok"] = False
             continue
         new_names = res["added"] + res["replaced"]
+        new_clips = res.get("added_clips", []) + res.get("replaced_clips", [])
         if new_names:
-            jobs.log_line(pid, "🎉 케빈이 올린 이미지 자동 수신 완료!")
-            detail = f"  · {folder.name} → kf/ : 새 이미지 {len(res['added'])}장"
-            if res["replaced"]:
-                detail += f", 교체 {len(res['replaced'])}장"
-            jobs.log_line(pid, detail)
-            jobs.log_line(pid, f"  · 이미지 {res['media']['found']}/{res['media']['total']}컷 감지")
-            log(f"{pid} ← {folder.name}: 새 이미지 {len(res['added'])}장"
-                + (f", 교체 {len(res['replaced'])}장" if res["replaced"] else ""))
+            jobs.log_line(pid, "🎉 케빈이 올린 " + ("클립" if new_clips else "이미지") + " 자동 수신 완료!")
+            if res.get("added_clips") or res.get("replaced_clips"):
+                detail = f"  · {folder.name} → clips/ : 새 클립 {len(res.get('added_clips', []))}개"
+                if res.get("replaced_clips"):
+                    detail += f", 교체 {len(res['replaced_clips'])}개"
+                jobs.log_line(pid, detail)
+            if res["added"] or res["replaced"]:
+                detail = f"  · {folder.name} → kf/ : 새 이미지 {len(res['added'])}장"
+                if res["replaced"]:
+                    detail += f", 교체 {len(res['replaced'])}장"
+                jobs.log_line(pid, detail)
+            jobs.log_line(pid, f"  · 미디어 {res['media']['found']}/{res['media']['total']}컷 감지"
+                               + (f" (클립 {res['media'].get('clips', 0)}컷)" if res['media'].get("clips") else ""))
+            log(f"{pid} ← {folder.name}: 새 파일 {len(new_names)}개"
+                + (f" (클립 {len(new_clips)}개)" if new_clips else ""))
         rec = {"sig": sig, "target": pid, "why": why,
                "finished_at": datetime.now().isoformat(timespec="seconds"),
+               "pending_render": False,
                "files": [f.split("→")[0] for f in new_names]}
+
+        st = res["media"]
+        if do_render and res.get("needs_render"):
+            if jobs.is_busy(pid):
+                rec["pending_render"] = True                  # 작업 중이면 끝난 뒤 다시 시도
+                log(f"{pid}: 렌더 중이라 재조립을 다음 차례로 미룹니다")
+            else:
+                had_video = planner.final_video(pid).exists()
+                try:
+                    jobs.run_render(pid)
+                    if had_video:
+                        jobs.log_line(pid, "🎬 클립/이미지 변경 감지 → 움직이는 버전으로 다시 조립 시작 (final.mp4 덮어씁니다)")
+                        log(f"{pid}: 미디어 변경 감지 → 재조립 시작(final.mp4 덮어쓰기)")
+                    else:
+                        jobs.log_line(pid, f"이미지 {st['found']}/{st['total']} 준비 완료 → 영상 조립 자동 시작"
+                                           + (f" (클립 {st.get('clips', 0)}컷)" if st.get("clips") else ""))
+                        log(f"{pid}: 전 컷 준비 완료 → 영상 조립 자동 시작")
+                    summary["rendered"].append(pid)
+                    _last["last_render"] = list(summary["rendered"])
+                except Exception as e:
+                    rec["pending_render"] = True
+                    jobs.log_line(pid, f"자동 조립 시작 실패: {e}")
+                    log(f"{pid}: 자동 조립 시작 실패 — {e}")
         state["folders"][folder.name] = rec
         save_state(state)
         summary["received"].append({"project_id": pid, "folder": folder.name,
-                                    "added": res["added"], "replaced": res["replaced"]})
+                                    "added": res["added"], "replaced": res["replaced"],
+                                    "added_clips": res.get("added_clips", []),
+                                    "replaced_clips": res.get("replaced_clips", [])})
         _last["last_receive_at"] = rec["finished_at"]
-        _last["last_received"] = [f"{pid} ← {folder.name} {len(new_names)}장"]
-
-        st = res["media"]
-        if do_render and st["ready"] and not (planner.project_dir(pid) / "out" / "final.mp4").exists() \
-                and not jobs.is_busy(pid):
-            try:
-                jobs.run_render(pid)
-                jobs.log_line(pid, f"이미지 {st['found']}/{st['total']} 준비 완료 → 영상 조립 자동 시작")
-                log(f"{pid}: 전 컷 준비 완료 → 영상 조립 자동 시작")
-                summary["rendered"].append(pid)
-                _last["last_render"] = list(summary["rendered"])
-            except Exception as e:
-                jobs.log_line(pid, f"자동 조립 시작 실패: {e}")
-                log(f"{pid}: 자동 조립 시작 실패 — {e}")
+        _last["last_received"] = [f"{pid} ← {folder.name} {len(new_names)}개"]
     return summary
 
 
@@ -434,7 +510,8 @@ def status() -> dict:
         "running": bool(_thread and _thread.is_alive()),
         "interval": poll_seconds(),
         "inbox_root": str(settings.assets_dir()),
-        "folders": [{"folder": d.name, "count": len(_images(d))} for d in inbox_folders()],
+        "folders": [{"folder": d.name, "count": len(_images(d)), "clips": len(_clips(d))}
+                    for d in inbox_folders()],
         "state": dict(_last),
         "log": list(_log)[-40:],
     }

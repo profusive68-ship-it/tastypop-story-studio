@@ -6,6 +6,7 @@
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 import unicodedata
@@ -422,59 +423,143 @@ def resolve_media(project: dict, cut: dict) -> tuple[Path | None, str]:
 
 
 def media_status(project: dict) -> dict:
-    """kf/ · clips/ 자동 감지 → 초록불 여부."""
+    """kf/ · clips/ 자동 감지 → 초록불 여부(컷별 파일명·수정시각 포함)."""
     rows = []
     for c in project["cuts"]:
         p, kind = resolve_media(project, c)
+        mtime = 0
+        mtime_ns = 0
+        size = 0
+        if p is not None:
+            try:
+                st = p.stat()
+                mtime = int(st.st_mtime)
+                mtime_ns = int(st.st_mtime_ns)
+                size = int(st.st_size)
+            except OSError:
+                pass
         rows.append({"id": c["id"], "found": p is not None, "kind": kind,
-                     "file": p.name if p else "", "dur": c["dur"]})
+                     "file": p.name if p else "", "dur": c["dur"],
+                     "mtime": mtime, "mtime_ns": mtime_ns, "size": size,
+                     "url": f"/api/projects/{project['id']}/kf/{c['id']}?v={mtime}" if p is not None else ""})
     found = sum(1 for r in rows if r["found"])
     total = len(rows)
+    clips = sum(1 for r in rows if r["kind"] == "clip")
     return {
         "cuts": rows,
         "found": found,
         "total": total,
+        "clips": clips,
         "ready": found == total and total > 0,
         "can_render": found > 0,
         "missing": [r["id"] for r in rows if not r["found"]],
     }
 
 
+def media_signature(project: dict) -> str:
+    """지금 조립에 쓰이는 파일(정지 이미지/클립)의 지문.
+
+    같은 컷이라도 클립으로 바뀌거나 파일이 교체되면 값이 달라진다.
+    → 렌더 후 지문을 project['render']['media_signature'] 에 남겨 두고 비교하면
+      "클립이 나중에 도착해도 다시 조립해야 하는지"를 정확히 알 수 있다.
+    """
+    parts = []
+    for c in project.get("cuts", []):
+        if not c.get("enabled", True):
+            continue
+        p, kind = resolve_media(project, c)
+        if p is None:
+            parts.append(f"{c['id']}:-:-")
+            continue
+        try:
+            st = p.stat()
+            parts.append(f"{c['id']}:{kind}:{p.name}:{st.st_size}:{st.st_mtime_ns}")
+        except OSError:
+            parts.append(f"{c['id']}:{kind}:{p.name}:0:0")
+    return hashlib.sha1("|".join(parts).encode("utf-8")).hexdigest()
+
+
+def final_video(pid: str) -> Path:
+    return project_dir(pid) / "out" / "final.mp4"
+
+
+def render_needs_update(project: dict) -> bool:
+    """지금 미디어로 final.mp4 를 (다시) 조립해야 하는지.
+
+    - 아직 영상이 없고 전 컷이 준비됐으면 → 조립 필요
+    - 영상을 만든 뒤 미디어(클립 도착·이미지 교체)가 바뀌었으면 → 재조립 필요
+    """
+    st = media_status(project)
+    if not st["ready"]:
+        return False
+    final = final_video(project["id"])
+    if not final.exists():
+        return True
+    try:
+        final_ns = final.stat().st_mtime_ns
+    except OSError:
+        return True
+    recorded = ((project.get("render") or {}).get("media_signature") or "").strip()
+    cur = media_signature(project)
+    if recorded:
+        return cur != recorded
+    # 지문이 없는 예전 프로젝트: 영상보다 새 파일이 있으면 다시 조립한다.
+    return any((r.get("mtime_ns") or 0) > final_ns for r in st["cuts"])
+
+
 def import_images(pid: str, src_dir: Path, overwrite: bool = False) -> dict:
-    """assets_inbox 폴더의 kf1.png ~ kf10.png 를 프로젝트 kf/c01.png … 로 복사."""
+    """assets_inbox 폴더의 kf1.png ~ kf10.png → kf/, c01.mp4 ~ → clips/ 로 복사."""
     import shutil
 
     project = load_project(pid)
-    d = project_dir(pid) / "kf"
-    d.mkdir(parents=True, exist_ok=True)
     src = Path(src_dir)
-    files = [p for p in sorted(src.iterdir()) if p.suffix.lower() in KF_EXT] if src.is_dir() else []
-    if not files:
-        raise FileNotFoundError(f"이미지가 없습니다: {src}")
-    copied, skipped = [], []
-    # 파일명에서 숫자를 뽑아 컷 번호로 매칭(kf3.png → 3, 3.png → 3), 없으면 순서대로
-    parsed = []
-    for p in files:
-        m = re.search(r"(\d+)", p.stem)
-        parsed.append((int(m.group(1)) if m else None, p))
-    if all(n is not None for n, _ in parsed):
-        parsed.sort(key=lambda x: x[0])
-    for idx, (num, p) in enumerate(parsed, start=1):
-        cut_id = num if num and 1 <= num <= len(project["cuts"]) else idx
-        if cut_id > len(project["cuts"]):
-            continue
-        dst = d / f"c{cut_id:02d}{p.suffix.lower()}"
-        if dst.exists() and not overwrite:
-            skipped.append(dst.name)
-            continue
-        shutil.copy2(p, dst)
-        copied.append(dst.name)
+
+    def _copy(files: list[Path], sub: str, dest_for) -> tuple[list[str], list[str]]:
+        d = project_dir(pid) / sub
+        d.mkdir(parents=True, exist_ok=True)
+        copied, skipped = [], []
+        parsed = []
+        for p in files:
+            m = re.search(r"(\d+)", p.stem)
+            parsed.append((int(m.group(1)) if m else None, p))
+        if all(n is not None for n, _ in parsed):
+            parsed.sort(key=lambda x: x[0])
+        for idx, (num, p) in enumerate(parsed, start=1):
+            cut_id = num if num and 1 <= num <= len(project["cuts"]) else idx
+            if cut_id > len(project["cuts"]):
+                continue
+            dst = dest_for(cut_id, p.suffix.lower())
+            if dst.exists() and not overwrite:
+                skipped.append(dst.name)
+                continue
+            shutil.copy2(p, dst)
+            copied.append(dst.name)
+        return copied, skipped
+
+    imgs = [p for p in sorted(src.iterdir()) if p.suffix.lower() in KF_EXT] if src.is_dir() else []
+    clips = [p for p in sorted(src.iterdir()) if p.suffix.lower() in CLIP_EXT] if src.is_dir() else []
+    sub = src / "clips" if src.is_dir() else None
+    if sub and sub.is_dir():
+        clips += [p for p in sorted(sub.iterdir()) if p.suffix.lower() in CLIP_EXT]
+    if not imgs and not clips:
+        raise FileNotFoundError(f"이미지/클립이 없습니다: {src}")
+
+    def kf_dest(cut_id: int, ext: str) -> Path:
+        return project_dir(pid) / "kf" / f"c{cut_id:02d}{ext}"
+
+    def clip_dest(cut_id: int, ext: str) -> Path:
+        return project_dir(pid) / "clips" / f"c{cut_id:02d}{ext}"
+
+    copied, skipped = _copy(imgs, "kf", kf_dest)
+    c_copied, c_skipped = _copy(clips, "clips", clip_dest)
+    project = load_project(pid)
     st = media_status(project)
-    return {"copied": copied, "skipped": skipped, "media": st, "project_id": pid}
+    return {"copied": copied, "skipped": skipped, "copied_clips": c_copied, "skipped_clips": c_skipped,
+            "media": st, "project_id": pid, "needs_render": render_needs_update(project)}
 
 
 def inbox_folders() -> list[dict]:
-    """assets_inbox/ 안의 이미지 묶음 폴더 목록."""
+    """assets_inbox/ 안의 이미지·클립 묶음 폴더 목록."""
     root = settings.APP_DIR / "assets_inbox"
     out = []
     if not root.exists():
@@ -483,9 +568,13 @@ def inbox_folders() -> list[dict]:
         if not d.is_dir() or d.name.startswith("."):
             continue
         imgs = [p for p in d.iterdir() if p.suffix.lower() in KF_EXT]
-        if not imgs:
+        clips = [p for p in d.iterdir() if p.suffix.lower() in CLIP_EXT]
+        sub = d / "clips"
+        if sub.is_dir():
+            clips += [p for p in sub.iterdir() if p.suffix.lower() in CLIP_EXT]
+        if not imgs and not clips:
             continue
-        out.append({"folder": d.name, "path": str(d), "count": len(imgs),
+        out.append({"folder": d.name, "path": str(d), "count": len(imgs), "clips": len(clips),
                     "files": sorted(p.name for p in imgs),
                     "updated": datetime.fromtimestamp(d.stat().st_mtime).isoformat(timespec="minutes")})
     return out

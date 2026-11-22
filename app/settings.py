@@ -44,10 +44,14 @@ DEFAULTS: dict = {
         "github_token": "",          # 선택: 있으면 이미지 요청 이슈를 자동 생성
     },
     "github": {
-        # 케빈과 이미지를 주고받는 저장소
+        # 케빈과 이미지·클립을 주고받는 저장소
         "repo": "profusive68-ship-it/tastypop-story-studio",
-        "issue_label": "image-request",
+        "issue_label": "image-request",          # 처음 이미지 요청
+        "revision_label": "image-revision",      # 이미 받은 컷 이미지 수정 요청
+        "video_label": "video-request",          # 움직이는 클립(.mp4) 제작 요청
         "issue_title_prefix": "[이미지요청]",
+        "revision_title_prefix": "[이미지수정]",
+        "video_title_prefix": "[영상제작]",
     },
     "assets": {
         "auto_receive": True,         # 20초마다 자동 이미지 수신(기본 ON)

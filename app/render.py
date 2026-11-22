@@ -289,6 +289,9 @@ def render(project: dict, dialogue: list[dict] | None = None, progress=None, log
 
     # 2) 컷 정규화 → 연결
     clips = prepare_cuts(project, progress, log)
+    _st = planner.media_status(project)
+    if log and _st.get("clips"):
+        log(f"미디어 구성: 클립 {_st['clips']}컷 + 정지 이미지 {_st.get('found', 0) - _st['clips']}컷")
     body = d / "work" / "body.mp4"
     _concat(clips, body, log)
     _cb(progress, 55, "컷 리듬 조립")
@@ -327,6 +330,11 @@ def render(project: dict, dialogue: list[dict] | None = None, progress=None, log
         if log:
             log(f"라우드니스 미세보정 건너뜀: {e}")
     report["hook"] = check_hook_kill(final, float(project.get("hook", {}).get("end", 0.9)))
+    # 이번 렌더에 쓴 미디어 지문 — 나중에 클립/이미지가 바뀌면 재조립 판단에 쓴다.
+    st = planner.media_status(project)
+    report["media_signature"] = planner.media_signature(project)
+    report["clips"] = st.get("clips", 0)
+    report["images"] = st.get("found", 0) - st.get("clips", 0)
     report["target"] = {
         "size": f"{r['width']}x{r['height']}",
         "fps": r["fps"],

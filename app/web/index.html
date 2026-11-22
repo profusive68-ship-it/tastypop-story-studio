@@ -201,14 +201,43 @@
 
     <div class="card" id="pdMediaCard">
       <div class="row" style="justify-content:space-between">
-        <h3 style="margin:0">🖼️ 이미지 자동 감지 <span class="hint">(kf 폴더 · kf1.png~kf10.png)</span></h3>
+        <h3 style="margin:0">🖼️ 이미지 자동 감지 <span class="hint">(kf 폴더 · kf1.png~kf10.png / clips 폴더 · c01.mp4)</span></h3>
         <span class="pill" id="pdMediaPill"><span class="dot"></span>확인 중</span>
       </div>
       <div class="hint" id="pdMediaText" style="margin-top:8px"></div>
+      <div class="kfgallery" id="pdKfGallery"></div>
       <div class="row" style="margin-top:10px">
         <button class="btn small" onclick="checkMedia(true)">↻ 지금 확인 + 자동 진행</button>
         <button class="btn small" onclick="openFolderMedia()">📂 kf 폴더 열기</button>
+        <button class="btn small" onclick="copyMediaReport()">📋 컷 검수 메모 복사</button>
       </div>
+    </div>
+
+    <div class="card" id="pdReviseCard">
+      <h3>✏️ 이미지 수정 요청 <span class="hint">— 받은 컷 중 고칠 컷을 한 줄로 적어 케빈에게 보냅니다</span></h3>
+      <div class="row">
+        <input id="inpImgRevise" style="flex:1" placeholder="예: 3번 컷 감자 표정 더 놀라게, 9번 태극기 더 크게">
+        <button class="btn primary small" id="pdImgRevise">✏️ 케빈에게 이미지 수정 요청</button>
+      </div>
+      <div class="hint" style="margin-top:8px">
+        컷 번호를 누르면 이 칸에 <b>“N번 컷 ”</b> 이 자동으로 들어갑니다. 케빈이 고쳐서 <b>같은 파일명</b>으로 다시 올리면 맥북이 20초마다 자동으로 바꿔 줍니다.
+      </div>
+      <div id="pdImgReviseResult" class="copyrow" style="display:none;margin-top:10px"></div>
+    </div>
+
+    <div class="card" id="pdVideoCard">
+      <h3>🎬 영상(클립) 제작 요청 <span class="hint">— 이미지 검수가 끝났으면 여기서 한 번에</span></h3>
+      <div class="hint" style="margin-top:4px">
+        <b>이미지를 다 확인하셨으면 눌러주세요!</b> 케빈이 Kling 구독 크레딧으로 움직이는 클립(.mp4)을 뽑아 깃허브로 보내드립니다 (5분 내 자동 감지 / 급할 땐 톡 ‘요청’).
+      </div>
+      <div class="row" style="margin-top:10px">
+        <input id="inpVideoNote" style="flex:1" placeholder="추가 지시(선택): 예: 7번 컷은 더 천천히, 치즈 늘어나는 모션 강하게">
+        <button class="btn primary small" id="pdVideoRequest">🎬 케빈에게 영상(클립) 제작 요청</button>
+      </div>
+      <div class="hint" style="margin-top:8px">
+        클립이 도착하면 <b>정지 이미지로 만들어 둔 영상이 있어도 자동으로 다시 조립</b>해 움직이는 버전으로 덮어씁니다.
+      </div>
+      <div id="pdVideoResult" class="copyrow" style="display:none;margin-top:10px"></div>
     </div>
 
     <div class="card">

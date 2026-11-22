@@ -1,7 +1,7 @@
 /* TastyPop Studio 대시보드 */
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
-let STATE = { type: "asmr3d", project: null, health: null, projects: [], poll: null };
+let STATE = { type: "asmr3d", project: null, health: null, projects: [], poll: null, media: null };
 
 async function api(path, opts = {}) {
   const r = await fetch(path, {
@@ -192,7 +192,7 @@ async function openProject(pid) {
     $("#pdCta1").value = p.cta?.like || "";
     $("#pdCta2").value = p.cta?.save || "";
     const cuts = p.cuts.map(c => {
-      const kf = `/api/projects/${pid}/preview/c${String(c.id).padStart(2, "0")}.png?v=${Date.now()}`;
+      const kf = `/api/projects/${pid}/kf/${c.id}?v=${Date.now()}`;
       const line = c.line || {};
       return `<div class="copyrow" style="margin-bottom:8px">
         <div class="head">
@@ -323,16 +323,108 @@ async function checkMedia(auto = true) {
     const m = await api(`/api/projects/${STATE.project}/media?auto=${auto}`);
     const pill = $("#pdMediaPill");
     if (!pill) return;
+    STATE.media = m;
     pill.className = "pill " + (m.ready ? "ok" : (m.found ? "warn" : ""));
-    pill.innerHTML = `<span class="dot ${m.ready ? "ok" : (m.found ? "warn" : "")}"></span>${m.found}/${m.total}컷`;
+    pill.innerHTML = `<span class="dot ${m.ready ? "ok" : (m.found ? "warn" : "")}"></span>${m.found}/${m.total}컷`
+      + (m.clips ? ` · 🎬${m.clips}` : "");
     const missing = (m.missing || []).map(n => "C" + String(n).padStart(2, "0")).join(", ");
-    $("#pdMediaText").innerHTML = m.ready
-      ? `✅ 모두 준비됨. ${m.queued ? "영상 조립을 자동으로 시작했습니다." : (m.has_video ? "완성 영상이 있습니다." : "[🎬 영상 조립]을 누르면 바로 렌더됩니다.")}`
+    const clipNote = m.clips
+      ? (m.needs_render ? "<br>🎬 <b>클립이 더 새롭습니다 — 자동으로 다시 조립 중/대기 중</b> (final.mp4 덮어씀)"
+                        : (m.has_video ? "<br>🎬 클립 버전으로 조립된 영상이 있습니다." : ""))
+      : "";
+    $("#pdMediaText").innerHTML = (m.ready
+      ? `✅ 모두 준비됨. ${m.queued ? (m.has_video ? "미디어가 바뀌어 영상 재조립을 시작했습니다." : "영상 조립을 자동으로 시작했습니다.")
+                                     : (m.has_video ? (m.needs_render ? "[🎬 영상 조립]을 누르면 다시 렌더됩니다." : "완성 영상이 있습니다.")
+                                                    : "[🎬 영상 조립]을 누르면 바로 렌더됩니다.")}`
       : `kf/ 폴더에 이미지 ${m.found}/${m.total} 컷 감지 · 빠진 컷: <b>${missing || "없음"}</b><br>
-         <span class="hint">kf1.png ~ kf10.png 또는 c01.png ~ c10.png 로 넣으면 자동 인식됩니다.</span>`;
+         <span class="hint">kf1.png ~ kf10.png 또는 c01.png ~ c10.png 로 넣으면 자동 인식됩니다.</span>`) + clipNote;
+    renderKfGallery(m);
     if (m.queued) startPolling(STATE.project);
   } catch (e) { }
 }
+
+function renderKfGallery(m) {
+  const box = $("#pdKfGallery");
+  if (!box) return;
+  if (!m || !m.cuts) { box.innerHTML = ""; return; }
+  box.innerHTML = m.cuts.map(r => {
+    const num = String(r.id).padStart(2, "0");
+    const pid = m.project_id || STATE.project;
+    const url = r.url || (pid ? `/api/projects/${pid}/kf/${r.id}?v=${r.mtime || 0}` : "");
+    const kindTag = r.kind === "clip" ? `<span class="kind clip">🎬 클립</span>`
+                                       : (r.kind === "image" ? `<span class="kind">🖼️ 이미지</span>` : "");
+    return `<div class="kfcard ${r.found ? "" : "missing"}">
+      ${r.found
+        ? `<img src="${esc(url)}" alt="C${num}" loading="lazy" onclick="openKf(${JSON.stringify(url)})" onerror="this.style.visibility='hidden'">`
+        : `<div class="nope">아직 없음</div>`}
+      ${r.found ? kindTag : ""}
+      <div class="cap">
+        <b title="누르면 수정 지시에 이 컷 번호가 들어갑니다" onclick="pickCut(${r.id})">C${num}</b>
+        <span>${r.dur}초</span>
+      </div>
+    </div>`;
+  }).join("");
+}
+
+function openKf(url) {
+  if (!url) return;
+  window.open(url, "_blank", "noopener");
+}
+
+function pickCut(id) {
+  const inp = $("#inpImgRevise");
+  if (!inp) return;
+  const token = `${id}번 컷 `;
+  if (!inp.value.includes(token)) inp.value = (inp.value.trim() ? inp.value.trim() + ", " : "") + token;
+  inp.focus();
+  inp.setSelectionRange(inp.value.length, inp.value.length);
+  const card = $("#pdReviseCard");
+  if (card) card.scrollIntoView({ behavior: "smooth", block: "center" });
+}
+
+function copyMediaReport() {
+  const m = STATE.media;
+  if (!m) return toast("이미지 감지 정보가 아직 없습니다");
+  const lines = (m.cuts || []).map(r => `C${String(r.id).padStart(2, "0")} ${r.found ? "✅" : "⬜"} ${r.kind === "clip" ? "클립" : "이미지"} ${r.file || ""}`);
+  copy(`[${STATE.project}] 이미지 검수\n` + lines.join("\n"));
+}
+
+/* ---------------- 이미지 수정·영상 제작 요청 ---------------- */
+async function sendGithubRequest(kind, instruction, btn, resultBox, idleLabel, busyLabel) {
+  if (!STATE.project) return toast("프로젝트를 먼저 열어 주세요");
+  btn.disabled = true;
+  btn.textContent = busyLabel;
+  try {
+    const r = await api(`/api/projects/${STATE.project}/github-issue`, { method: "POST", body: { kind, instruction } });
+    if (r.url) window.open(r.url, "_blank", "noopener");
+    const box = $(resultBox);
+    box.style.display = "block";
+    const head = r.mode === "api" ? "✅ 깃허브 이슈 생성됨" : (r.mode === "api_failed" ? "⚠️ 토큰 실패 → 작성 화면으로 대체" : "📝 깃허브 작성 화면 열렸음");
+    box.innerHTML = `<div class="head"><b>${esc(head)}</b><span class="pill ${r.ok ? "ok" : "warn"}">${esc(r.target_inbox || "")}</span></div>
+      <div class="body">${esc(r.message || "")}</div>
+      ${instruction ? `<div class="body" style="margin-top:6px"><b>지시</b>\n${esc(instruction)}</div>` : ""}
+      ${r.url ? `<div class="body"><a href="${esc(r.url)}" target="_blank">${esc(r.url)}</a></div>` : ""}
+      <div class="row" style="margin-top:8px">
+        <button class="btn small" onclick='copyText(${JSON.stringify(r.copy_text || r.body || "")})'>요청서 복사</button>
+        ${r.url ? `<a class="btn small" href="${esc(r.url)}" target="_blank">깃하브에서 열기</a>` : ""}
+      </div>`;
+    toast(r.mode === "api" ? "요청을 보냈습니다 — 케빈이 확인합니다" : "작성 화면에서 [Submit new issue] 만 누르면 됩니다");
+  } catch (e) { toast(e.message); }
+  finally { btn.disabled = false; btn.textContent = idleLabel; }
+}
+
+$("#pdImgRevise").onclick = () => {
+  const inst = $("#inpImgRevise").value.trim();
+  if (!inst) return toast("수정 지시를 적어 주세요 (예: 3번 컷 감자 표정 더 놀라게)");
+  sendGithubRequest("image_revision", inst, $("#pdImgRevise"), "#pdImgReviseResult",
+    "✏️ 케빈에게 이미지 수정 요청", "수정 요청 보내는 중…");
+};
+
+$("#pdVideoRequest").onclick = () => {
+  const note = $("#inpVideoNote") ? $("#inpVideoNote").value.trim() : "";  sendGithubRequest("video_request", note, $("#pdVideoRequest"), "#pdVideoResult",
+    "🎬 케빈에게 영상(클립) 제작 요청", "영상 제작 요청 보내는 중…");
+};
+
 async function openFolderMedia() {
   if (STATE.project) await api(`/api/open/${STATE.project}`);
 }
@@ -353,7 +445,7 @@ async function loadInbox() {
       const thumb = f.files[0] ? `/api/inbox/image?folder=${encodeURIComponent(f.folder)}&name=${encodeURIComponent(f.files[0])}` : "";
       return `<div class="copyrow">
         <div class="row" style="justify-content:space-between">
-          <b>📁 ${esc(f.folder)}</b><span class="pill">이미지 ${f.count}장 · ${esc(f.updated)}</span>
+          <b>📁 ${esc(f.folder)}</b><span class="pill">이미지 ${f.count}장${f.clips ? ` · 🎬 클립 ${f.clips}개` : ""} · ${esc(f.updated)}</span>
         </div>
         <div class="row" style="margin-top:8px;gap:10px">
           ${thumb ? `<img src="${thumb}" style="width:44px;height:78px;object-fit:cover;border-radius:6px;border:1px solid var(--line)">` : ""}
@@ -370,7 +462,7 @@ async function importInbox(folder) {
   if (!pid) return toast("가져올 프로젝트를 선택하세요");
   try {
     const r = await api(`/api/projects/${pid}/import`, { method: "POST", body: { folder } });
-    toast(`이미지 ${r.copied.length}장을 프로젝트에 넣었습니다`);
+    toast(`이미지 ${r.copied.length}장${(r.copied_clips || []).length ? ` · 클립 ${r.copied_clips.length}개` : ""}을 프로젝트에 넣었습니다`);
     STATE.project = pid;
     await loadProjects();
     showTab("projects");
@@ -474,8 +566,12 @@ async function manualWatch() {
   toast("지금 확인 중…");
   try {
     const r = await api("/api/watch/now", { method: "POST", body: {} });
-    const got = (r.received || []).reduce((n, x) => n + (x.added || []).length + (x.replaced || []).length, 0);
-    toast(got ? `새 이미지 ${got}장을 받아 kf/ 에 넣었습니다 🎉` : ((r.pull && r.pull.message) || "새 이미지가 없습니다"));
+    const got = (r.received || []).reduce((n, x) => n + (x.added || []).length + (x.replaced || []).length
+      + (x.added_clips || []).length + (x.replaced_clips || []).length, 0);
+    const clips = (r.received || []).reduce((n, x) => n + (x.added_clips || []).length + (x.replaced_clips || []).length, 0);
+    const rebuilt = (r.rendered || []).length;
+    toast(got ? `새 파일 ${got}개를 받았습니다${clips ? ` (클립 ${clips}개)` : ""} 🎉${rebuilt ? " · 영상 재조립 중" : ""}`
+              : ((r.pull && r.pull.message) || "새 파일이 없습니다"));
     await loadInbox(); loadWatch();
     if (STATE.project) openProject(STATE.project);
   } catch (e) { toast(e.message); }

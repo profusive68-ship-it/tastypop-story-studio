@@ -152,6 +152,9 @@ def main() -> int:
         from test_github_inbox import run_all as run_github
 
         check("깃허브 이미지 요청·자동 수신", run_github)
+        from test_v12_features import run_all as run_v12
+
+        check("v1.2 이미지 미리보기·수정요청·영상제작요청·클립 재조립", run_v12)
     except Exception as e:
         RESULTS.append(("깃허브 이미지 요청·자동 수신", False, str(e)))
         print("❌ 깃허브 이미지 요청·자동 수신:", e)
